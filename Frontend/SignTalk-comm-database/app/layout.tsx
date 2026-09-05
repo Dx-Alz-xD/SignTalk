@@ -1,11 +1,10 @@
-import { Analytics } from '@vercel/analytics/next'
 import type { Metadata, Viewport } from 'next'
 import { Geist, Geist_Mono } from 'next/font/google'
 import { THEME_STORAGE_KEY } from '@/lib/theme-storage'
 import './globals.css'
 
 // next/font generates a hashed family name, so the CSS variable is the only
-// reliable way to reach these — naming the family in globals.css never matched.
+// reliable way to reach these.
 const geistSans = Geist({
   subsets: ['latin'],
   variable: '--font-geist-sans',
@@ -19,27 +18,9 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
-  title: 'SignTalk',
+  title: 'SignTalk — Community Database',
   description:
-    'SignTalk interprets sign language in real time and lets you train any sign language.',
-  generator: 'v0.app',
-  icons: {
-    icon: [
-      {
-        url: '/icon-light-32x32.png',
-        media: '(prefers-color-scheme: light)',
-      },
-      {
-        url: '/icon-dark-32x32.png',
-        media: '(prefers-color-scheme: dark)',
-      },
-      {
-        url: '/icon.svg',
-        type: 'image/svg+xml',
-      },
-    ],
-    apple: '/apple-icon.png',
-  },
+    'Browse, filter and download sign sets contributed by the SignTalk community.',
 }
 
 export const viewport: Viewport = {
@@ -81,10 +62,7 @@ export default function RootLayout({
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeBootstrap }} />
       </head>
-      <body className="antialiased font-sans">
-        {children}
-        {process.env.NODE_ENV === 'production' && <Analytics />}
-      </body>
+      <body className="antialiased font-sans">{children}</body>
     </html>
   )
 }

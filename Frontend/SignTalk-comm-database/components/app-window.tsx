@@ -2,23 +2,8 @@ import type { ReactNode } from 'react'
 import { SignTalkMark } from '@/components/signtalk-mark'
 import { ThemeToggle } from '@/components/theme-toggle'
 
-const titles: Record<string, string> = {
-  login: 'SignTalk — Sign in',
-  signup: 'SignTalk — Create account',
-  forgot: 'SignTalk — Reset password',
-  loading: 'SignTalk — Starting up',
-  home: 'SignTalk',
-  trainer: 'SignTalk — Trainer',
-  community: 'SignTalk — Community Database',
-}
-
-export function AppWindow({
-  screen,
-  children,
-}: {
-  screen: string
-  children: ReactNode
-}) {
+/** The SignTalk desktop-window frame, so this app reads as part of the product. */
+export function AppWindow({ title, children }: { title: string; children: ReactNode }) {
   return (
     <div className="relative w-full max-w-5xl">
       {/* Ambient wash so the window sits in a space rather than on a flat page. */}
@@ -42,7 +27,7 @@ export function AppWindow({
           <div className="flex min-w-0 flex-1 items-center justify-center gap-2">
             <SignTalkMark compact className="size-4 shrink-0" />
             <span className="truncate text-xs font-medium tracking-tight text-muted-foreground">
-              {titles[screen] ?? 'SignTalk'}
+              {title}
             </span>
           </div>
 
