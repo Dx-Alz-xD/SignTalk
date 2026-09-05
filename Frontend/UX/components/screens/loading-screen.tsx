@@ -43,7 +43,7 @@ export function LoadingScreen({ onDone }: { onDone: () => void }) {
         </span>
         <div className="flex flex-col items-center gap-1.5">
           <SignTalkWordmark className="text-lg" />
-          <h2 className="sr-only">Starting SignTalk</h2>
+          <h1 className="sr-only">Starting SignTalk</h1>
           {/* One polite announcement per step, rather than a chatty list. */}
           <p className="text-sm text-muted-foreground" role="status" aria-live="polite">
             {completed >= steps.length ? 'Ready' : current}

@@ -26,14 +26,25 @@ const palm = [0, 5, 9, 13, 17]
 /** The chain the travelling highlight runs along. */
 const tracePath = `M ${[0, 5, 6, 7, 8].map((i) => points[i].join(' ')).join(' L ')}`
 
+// Static: useId is a hook, and this renders inside a Server Component. The
+// graph appears once per page, so a fixed id cannot collide.
+const titleId = 'hand-graph-title'
+
 export function HandGraph({ className }: { className?: string }) {
   return (
     <svg
       viewBox="0 0 240 268"
       fill="none"
       className={cn('h-full w-full', className)}
-      aria-hidden="true"
+      role="img"
+      aria-labelledby={titleId}
     >
+      {/* The SVG equivalent of alt text: read out by screen readers and used
+          by crawlers that index inline graphics. */}
+      <title id={titleId}>
+        A hand with the 21 tracking points a sign language recognition model
+        detects, connected into a skeleton
+      </title>
       <polygon
         points={palm.map((i) => points[i].join(',')).join(' ')}
         fill="currentColor"

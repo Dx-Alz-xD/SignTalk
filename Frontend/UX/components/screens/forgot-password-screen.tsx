@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { useRouter } from 'next/navigation'
 import {
   ChevronRight,
   Loader2,
@@ -13,11 +14,12 @@ import {
 import { Button } from '@/components/ui/button'
 import { TextField } from '@/components/ui/field'
 import { AuthLayout, AuthHeading, BackButton } from '@/components/auth-layout'
+import { Breadcrumbs } from '@/components/breadcrumbs'
+import { loadAccount, type AccountDetails } from '@/lib/account-session'
 import { CodeInput, emptyCode } from '@/components/code-input'
 import { maskPhone } from '@/lib/country-codes'
 import { validateEmail } from '@/lib/validation'
 import { cn } from '@/lib/utils'
-import type { SignUpDetails } from '@/components/screens/signup-screen'
 
 type Method = 'email' | 'sms'
 type Step = 'choose' | 'identify' | 'code'
@@ -25,17 +27,15 @@ type Step = 'choose' | 'identify' | 'code'
 const RESEND_SECONDS = 30
 
 export function ForgotPasswordScreen({
-  account,
-  onBack,
-  onVerified,
+  crumbs,
 }: {
-  account: SignUpDetails | null
-  onBack: () => void
-  onVerified: () => void
+  crumbs: { name: string; href: string }[]
 }) {
+  const router = useRouter()
+  const [account, setAccount] = useState<AccountDetails | null>(null)
   const [step, setStep] = useState<Step>('choose')
   const [method, setMethod] = useState<Method>('email')
-  const [email, setEmail] = useState(account?.email ?? '')
+  const [email, setEmail] = useState('')
   const [emailError, setEmailError] = useState<string | null>(null)
   const [code, setCode] = useState<string[]>(emptyCode)
   const [submitting, setSubmitting] = useState(false)
@@ -45,6 +45,13 @@ export function ForgotPasswordScreen({
   const phoneLabel = account?.phone
     ? maskPhone(account.dial, account.phone)
     : 'the phone number on your account'
+
+  useEffect(() => {
+    const stored = loadAccount()
+    if (!stored) return
+    setAccount(stored)
+    setEmail((current) => current || stored.email)
+  }, [])
 
   useEffect(() => {
     if (cooldown <= 0) return
@@ -68,8 +75,7 @@ export function ForgotPasswordScreen({
   }
 
   function goBack() {
-    if (step === 'choose') onBack()
-    else if (step === 'identify') setStep('choose')
+    if (step === 'identify') setStep('choose')
     else setStep(method === 'sms' ? 'choose' : 'identify')
   }
 
@@ -93,12 +99,20 @@ export function ForgotPasswordScreen({
 
   const verify = useCallback(() => {
     setSubmitting(true)
-    onVerified()
-  }, [onVerified])
+    router.push('/app')
+  }, [router])
 
   return (
     <AuthLayout>
-      <BackButton onClick={goBack}>{backLabel}</BackButton>
+      <Breadcrumbs crumbs={crumbs} />
+
+      {/* Step one goes back to a different route; later steps stay on this
+          page, so only the first is a real link. */}
+      {step === 'choose' ? (
+        <BackButton href="/">{backLabel}</BackButton>
+      ) : (
+        <BackButton onClick={goBack}>{backLabel}</BackButton>
+      )}
 
       {step === 'choose' && (
         <>

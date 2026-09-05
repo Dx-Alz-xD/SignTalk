@@ -9,9 +9,10 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import type { ReactNode } from 'react'
+import Link from 'next/link'
 import { SignTalkLockup } from '@/components/signtalk-mark'
 import { cn } from '@/lib/utils'
-import type { SignUpDetails } from '@/components/screens/signup-screen'
+import type { AccountDetails } from '@/lib/account-session'
 
 type Action = {
   id: 'translator' | 'trainer' | 'direct-paste' | 'community'
@@ -19,6 +20,8 @@ type Action = {
   description: string
   icon: LucideIcon
   meta: string
+  /** Set once the destination exists; without it the card is inert. */
+  href?: string
   /** Muted chip for things that aren't wired up yet. */
   pending?: boolean
 }
@@ -54,10 +57,11 @@ const actions: Action[] = [
     description: 'Share your trained signs, or download sets contributed by others.',
     icon: Database,
     meta: 'Community',
+    href: '/app/community',
   },
 ]
 
-function initials(account: SignUpDetails | null) {
+function initials(account: AccountDetails | null) {
   const source = account?.username?.trim() || account?.email?.split('@')[0] || ''
   if (!source) return 'ST'
   const words = source.split(/[\s._-]+/).filter(Boolean)
@@ -66,13 +70,7 @@ function initials(account: SignUpDetails | null) {
   return letters.toUpperCase()
 }
 
-export function HomeScreen({
-  account = null,
-  onOpen,
-}: {
-  account?: SignUpDetails | null
-  onOpen: (id: Action['id']) => void
-}) {
+export function HomeScreen({ account = null }: { account?: AccountDetails | null }) {
   return (
     <div className="flex flex-1 flex-col">
       <header className="flex shrink-0 items-center justify-between gap-4 border-b px-5 py-3.5 sm:px-8">
@@ -97,17 +95,17 @@ export function HomeScreen({
 
       <div className="flex flex-1 flex-col justify-center gap-7 px-5 py-9 sm:px-8">
         <div className="flex flex-col gap-1.5">
-          <h2 className="text-2xl font-semibold tracking-tight">What would you like to do?</h2>
+          <h1 className="text-2xl font-semibold tracking-tight">What would you like to do?</h1>
           <p className="text-sm leading-relaxed text-muted-foreground">
             Pick a workspace to get started.
           </p>
         </div>
 
         <div className="flex flex-col gap-4">
-          <FeaturedCard action={featured} onOpen={onOpen} />
+          <FeaturedCard action={featured} />
           <div className="grid gap-4 sm:grid-cols-3">
             {actions.map((action) => (
-              <ActionCard key={action.id} action={action} onOpen={onOpen} />
+              <ActionCard key={action.id} action={action} />
             ))}
           </div>
         </div>
@@ -124,15 +122,39 @@ const cardBase = cn(
   'focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/35',
 )
 
-/** The one thing most people open the app to do, so it gets the most weight. */
-function FeaturedCard({ action, onOpen }: { action: Action; onOpen: (id: Action['id']) => void }) {
-  const { title, description, icon: Icon, meta } = action
+/**
+ * A card is a real link once its destination exists, so the route is
+ * crawlable and openable in a new tab. Cards with nowhere to go yet stay
+ * buttons - focusable and announced, but inert.
+ */
+function CardShell({
+  href,
+  className,
+  children,
+}: {
+  href?: string
+  className: string
+  children: ReactNode
+}) {
+  if (href) {
+    return (
+      <Link href={href} className={className}>
+        {children}
+      </Link>
+    )
+  }
   return (
-    <button
-      type="button"
-      onClick={() => onOpen(action.id)}
-      className={cn(cardBase, 'p-5 sm:p-6 hover:border-primary/45')}
-    >
+    <button type="button" className={className}>
+      {children}
+    </button>
+  )
+}
+
+/** The one thing most people open the app to do, so it gets the most weight. */
+function FeaturedCard({ action }: { action: Action }) {
+  const { title, description, icon: Icon, meta, href } = action
+  return (
+    <CardShell href={href} className={cn(cardBase, 'p-5 sm:p-6 hover:border-primary/45')}>
       <span
         aria-hidden="true"
         className="pointer-events-none absolute -right-16 -top-20 size-52 rounded-full bg-primary opacity-[0.09] blur-3xl transition-opacity duration-300 group-hover:opacity-[0.16]"
@@ -155,16 +177,15 @@ function FeaturedCard({ action, onOpen }: { action: Action; onOpen: (id: Action[
           aria-hidden="true"
         />
       </span>
-    </button>
+    </CardShell>
   )
 }
 
-function ActionCard({ action, onOpen }: { action: Action; onOpen: (id: Action['id']) => void }) {
-  const { title, description, icon: Icon, meta, pending } = action
+function ActionCard({ action }: { action: Action }) {
+  const { title, description, icon: Icon, meta, pending, href } = action
   return (
-    <button
-      type="button"
-      onClick={() => onOpen(action.id)}
+    <CardShell
+      href={href}
       className={cn(cardBase, 'flex min-h-40 flex-col gap-3.5 p-5 hover:border-primary/45')}
     >
       <span className="flex items-center justify-between">
@@ -183,7 +204,7 @@ function ActionCard({ action, onOpen }: { action: Action; onOpen: (id: Action['i
         </span>
       </span>
       <Chip muted={pending}>{meta}</Chip>
-    </button>
+    </CardShell>
   )
 }
 

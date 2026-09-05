@@ -1,0 +1,46 @@
+# SignTalk
+
+> SignTalk interprets sign language from a camera in real time, translates
+> between sign languages, and lets anyone train new signs themselves.
+
+SignTalk is a real-time sign language interpreter. It reads hand landmarks
+from a webcam, recognises signs, and turns them into text or speech. It also
+works the other way: text in, sign language out. Any sign language can be
+added by recording it — the system is not limited to a fixed vocabulary.
+
+## What it does
+
+- **Translator** — live sign-to-text transcription from the camera, with
+  optional translation into other spoken or signed languages.
+- **Trainer** — record a letter, word or phrase from several angles and add
+  it to your own vocabulary.
+- **Direct paste** — transcribe in the background and type into whatever text
+  field currently has focus, so SignTalk works inside other applications.
+- **Community database** — share trained signs, or install sets contributed
+  by other people.
+
+## Pages
+
+- [Sign in](/): the landing page and sign-in form.
+- [Create an account](/signup): registration, with email and a phone number
+  used only for SMS verification codes.
+- [Reset your password](/forgot-password): recovery by a six-digit code sent
+  over email or SMS.
+
+## Platforms
+
+SignTalk runs in the browser and as a desktop application for macOS, Windows
+and Linux. The desktop build is the same web application wrapped in Electron,
+served locally so it works offline.
+
+## Technical notes
+
+- The interface is a Next.js application using the App Router and React.
+- Accounts are handled by a Python backend: Argon2id password hashing,
+  one-time codes delivered by email or SMS, and single-use recovery tickets.
+- Recognition data is modelled as symbols with per-angle captured views, so a
+  sign can be matched from the front, sides, top or bottom.
+
+## Contact
+
+Source and issues: https://github.com/Dx-Alz-xD/SignTalk
