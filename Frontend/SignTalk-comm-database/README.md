@@ -14,8 +14,7 @@ pnpm dev
 
 Serves on **http://localhost:3000**, pinned in `package.json`.
 
-> `Frontend/UX` also defaults to 3000, so only one of the two can run at a
-> time. Start the other with `next dev --port 3001` if you need both.
+`Frontend/UX` is pinned to 3001, so both apps can run at the same time.
 
 ## What it does
 
