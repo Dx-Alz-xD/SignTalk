@@ -4,10 +4,10 @@
   "private": true,
   "scripts": {
     "predev": "node scripts/copy-mediapipe.mjs",
-    "dev": "next dev",
+    "dev": "next dev --port 3001",
     "prebuild": "node scripts/copy-mediapipe.mjs",
     "build": "next build",
-    "start": "next start"
+    "start": "next start --port 3001"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",
