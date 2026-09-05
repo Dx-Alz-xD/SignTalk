@@ -388,14 +388,36 @@ export function CommunityDatabaseScreen({
             {rows.length === 0 && (
               <tr>
                 <td colSpan={5} className="px-8 py-16 text-center">
-                  <p className="text-sm font-medium">No sets match these filters</p>
-                  <button
-                    type="button"
-                    onClick={() => setFilters(emptyFilters)}
-                    className="mt-1.5 text-xs text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  >
-                    Clear all filters
-                  </button>
+                  {/* An empty table has four different causes, and blaming the
+                      filters for all of them sends people to clear filters that
+                      were never the problem. */}
+                  {loading ? (
+                    <p className="text-sm text-muted-foreground">
+                      Loading published languages&hellip;
+                    </p>
+                  ) : failure ? (
+                    <p className="text-sm text-muted-foreground">
+                      Nothing to show &mdash; the list could not be loaded.
+                    </p>
+                  ) : entries.length === 0 ? (
+                    <>
+                      <p className="text-sm font-medium">Nothing published yet</p>
+                      <p className="mt-1.5 text-xs text-muted-foreground">
+                        Languages shared to the community database will appear here.
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-sm font-medium">No sets match these filters</p>
+                      <button
+                        type="button"
+                        onClick={() => setFilters(emptyFilters)}
+                        className="mt-1.5 text-xs text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      >
+                        Clear all filters
+                      </button>
+                    </>
+                  )}
                 </td>
               </tr>
             )}
