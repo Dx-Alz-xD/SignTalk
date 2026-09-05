@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { Moon, Sun } from 'lucide-react'
-import { useTheme } from '@/lib/theme'
+import { useTheme } from '@/lib/use-theme'
 import { cn } from '@/lib/utils'
 
 export function ThemeToggle({ className }: { className?: string }) {

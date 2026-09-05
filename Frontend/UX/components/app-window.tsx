@@ -8,6 +8,7 @@ const titles: Record<string, string> = {
   forgot: 'SignTalk — Reset password',
   loading: 'SignTalk — Starting up',
   home: 'SignTalk',
+  trainer: 'SignTalk — Trainer',
 }
 
 export function AppWindow({

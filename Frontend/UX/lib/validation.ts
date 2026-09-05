@@ -11,6 +11,8 @@ export function validateUsername(value: string): string | null {
   const trimmed = value.trim()
   if (!trimmed) return 'Pick a username.'
   if (trimmed.length < 3) return 'Use at least 3 characters.'
+  // The server's rule is 3-20; matching it here saves a round trip.
+  if (trimmed.length > 20) return 'Use at most 20 characters.'
   if (!/^[a-zA-Z0-9_.-]+$/.test(trimmed)) {
     return 'Letters, numbers, dots, dashes and underscores only.'
   }

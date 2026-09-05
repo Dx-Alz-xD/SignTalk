@@ -13,3 +13,6 @@ __v0_jsx-dev-runtime.ts
 node_modules
 .next/
 .DS_Store
+
+# Staged from node_modules by scripts/copy-mediapipe.mjs on dev/build.
+public/mediapipe/
