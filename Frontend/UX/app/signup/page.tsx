@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { SignUpScreen } from '@/components/screens/signup-screen'
+import { SignUpFlow } from '@/components/auth-flows'
 import { PageShell } from '@/components/page-shell'
 import { PageSchema, type Crumb } from '@/components/structured-data'
 
@@ -29,7 +29,7 @@ export default function SignUpPage() {
     <>
       <PageSchema name={title} description={description} path="/signup" crumbs={crumbs} />
       <PageShell windowTitle="SignTalk — Create account">
-        <SignUpScreen crumbs={crumbs} />
+        <SignUpFlow crumbs={crumbs} />
       </PageShell>
     </>
   )

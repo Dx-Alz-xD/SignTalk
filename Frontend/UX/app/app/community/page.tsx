@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { CommunityDatabaseScreen } from '@/components/screens/community-database-screen'
+import { CommunityRoute } from '@/components/community-route'
 import { PageShell } from '@/components/page-shell'
 
 export const metadata: Metadata = {
@@ -14,7 +14,7 @@ export const metadata: Metadata = {
 export default function CommunityPage() {
   return (
     <PageShell windowTitle="SignTalk — Community Database">
-      <CommunityDatabaseScreen />
+      <CommunityRoute />
     </PageShell>
   )
 }

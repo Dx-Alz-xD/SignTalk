@@ -7,6 +7,8 @@ import { Input, Select } from '@/components/ui/input'
 import { TextField, PasswordField, FieldShell } from '@/components/ui/field'
 import { AuthLayout, AuthHeading, BackButton, LegalNote } from '@/components/auth-layout'
 import { FormAlert } from '@/components/form-alert'
+import { Breadcrumbs } from '@/components/breadcrumbs'
+import type { Crumb } from '@/components/structured-data'
 import { countryCodes } from '@/lib/country-codes'
 import { errorMessage } from '@/lib/api'
 import { signUp, type Account } from '@/lib/auth'
@@ -25,9 +27,12 @@ function e164(dial: string, phone: string): string {
 }
 
 export function SignUpScreen({
+  crumbs,
   onBack,
   onSignedIn,
 }: {
+  /** Visible breadcrumb trail, matching the JSON-LD the route emits. */
+  crumbs?: Crumb[]
   onBack: () => void
   /** Signing up signs you in, so this hands back a live session. */
   onSignedIn: (account: Account) => void
@@ -101,6 +106,7 @@ export function SignUpScreen({
 
   return (
     <AuthLayout>
+      {crumbs && <Breadcrumbs crumbs={crumbs} />}
       <BackButton onClick={onBack}>Back to log in</BackButton>
 
       <AuthHeading

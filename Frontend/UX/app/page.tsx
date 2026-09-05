@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { LoginScreen } from '@/components/screens/login-screen'
+import { LoginFlow } from '@/components/auth-flows'
 import { PageShell } from '@/components/page-shell'
 import { PageSchema } from '@/components/structured-data'
 import { SITE_DESCRIPTION } from '@/lib/site'
@@ -30,7 +30,7 @@ export default function HomePage() {
         path="/"
       />
       <PageShell windowTitle="SignTalk — Sign in">
-        <LoginScreen />
+        <LoginFlow />
       </PageShell>
     </>
   )

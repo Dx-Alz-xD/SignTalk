@@ -8,6 +8,7 @@ import {
   CircleCheck,
   Hand,
   Loader2,
+  Pencil,
   Plus,
   Sparkles,
   Trash2,
@@ -19,43 +20,149 @@ import { FormAlert } from '@/components/form-alert'
 import { SignTalkLockup } from '@/components/signtalk-mark'
 import { useCameraStage } from '@/components/trainer/camera-stage'
 import { useCapture } from '@/components/trainer/use-capture'
+import { LanguageDetailsForm } from '@/components/trainer/language-details-form'
+import { VocabularyTable, type Vocabulary } from '@/components/trainer/vocabulary-table'
 import { errorMessage } from '@/lib/api'
 import type { HandSample } from '@/lib/hand-tracker'
 import {
   DEFAULT_VIEW,
+  OUTPUT_KINDS,
   STANDARD_VIEWS,
   createSymbol,
-  createVocabulary,
   deleteSymbol,
   listLanguages,
   listSigns,
   listSymbols,
-  type Language,
-  type Sign,
+  outputPreview,
+  updateSymbol,
+  type OutputKind,
   type Symbol,
 } from '@/lib/library'
 import { modelStatus, type ModelStatus, type StoredView } from '@/lib/training'
 import { cn } from '@/lib/utils'
 
-/** A symbol is considered covered once one view holds this many samples. */
-const SAMPLES_FOR_READY = 40
+type Step = 'list' | 'details' | 'training'
 
 export function TrainerScreen({ onBack }: { onBack: () => void }) {
-  const [signs, setSigns] = useState<{ sign: Sign; language: Language }[]>([])
-  const [active, setActive] = useState<{ sign: Sign; language: Language } | null>(null)
+  const [step, setStep] = useState<Step>('list')
+  const [vocabularies, setVocabularies] = useState<Vocabulary[]>([])
+  const [active, setActive] = useState<Vocabulary | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [failure, setFailure] = useState<string | null>(null)
+
+  /** Reloads the whole tree; cheap enough, and never leaves a stale count. */
+  const reload = useCallback(async (signal?: AbortSignal) => {
+    const languages = await listLanguages(signal)
+    const pairs: Vocabulary[] = []
+    for (const language of languages) {
+      for (const sign of await listSigns(language.id, signal)) {
+        pairs.push({ sign, language })
+      }
+    }
+    if (!signal?.aborted) setVocabularies(pairs)
+    return pairs
+  }, [])
+
+  useEffect(() => {
+    const controller = new AbortController()
+    reload(controller.signal)
+      .catch((cause) => {
+        if (!controller.signal.aborted) setFailure(errorMessage(cause))
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false)
+      })
+    return () => controller.abort()
+  }, [reload])
+
+  if (loading) {
+    return (
+      <Shell onBack={onBack} title="Trainer">
+        <div className="flex flex-1 items-center justify-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+          Loading your sign languages&hellip;
+        </div>
+      </Shell>
+    )
+  }
+
+  if (step === 'details') {
+    return (
+      <Shell
+        onBack={() => setStep('list')}
+        backLabel="All sign languages"
+        title={active ? `Edit ${active.sign.name}` : 'New sign language'}
+        subtitle={active?.language.name}
+      >
+        <LanguageDetailsForm
+          existing={active}
+          onCancel={() => setStep('list')}
+          onReady={(saved) => {
+            setActive(saved)
+            void reload().catch(() => undefined)
+            setStep('training')
+          }}
+        />
+      </Shell>
+    )
+  }
+
+  if (step === 'training' && active) {
+    return (
+      <TrainingWorkspace
+        vocabulary={active}
+        onBack={() => {
+          void reload().catch(() => undefined)
+          setStep('list')
+        }}
+        onEditDetails={() => setStep('details')}
+      />
+    )
+  }
+
+  return (
+    <Shell onBack={onBack} title="Trainer" subtitle="Your sign languages">
+      {failure && <FormAlert>{failure}</FormAlert>}
+      <VocabularyTable
+        vocabularies={vocabularies}
+        onCreate={() => {
+          setActive(null)
+          setStep('details')
+        }}
+        onEdit={(vocabulary) => {
+          setActive(vocabulary)
+          setStep('details')
+        }}
+        onOpen={(vocabulary) => {
+          setActive(vocabulary)
+          setStep('training')
+        }}
+      />
+    </Shell>
+  )
+}
+
+// ------------------------------------------------------------------ training --
+
+function TrainingWorkspace({
+  vocabulary,
+  onBack,
+  onEditDetails,
+}: {
+  vocabulary: Vocabulary
+  onBack: () => void
+  onEditDetails: () => void
+}) {
+  const { sign, language } = vocabulary
+
   const [symbols, setSymbols] = useState<Symbol[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [view, setView] = useState<string>(DEFAULT_VIEW)
   const [model, setModel] = useState<ModelStatus | null>(null)
-
-  const [loading, setLoading] = useState(true)
+  const [cameraOn, setCameraOn] = useState(false)
   const [failure, setFailure] = useState<string | null>(null)
   const [saved, setSaved] = useState<string | null>(null)
-  const [cameraOn, setCameraOn] = useState(false)
 
-  // The render loop writes here every frame. It is a ref rather than state
-  // because nothing on screen needs to re-render 30 times a second — only the
-  // hand count does, and that is derived below.
   const handsRef = useRef<HandSample[]>([])
   const [handCount, setHandCount] = useState(0)
 
@@ -71,11 +178,17 @@ export function TrainerScreen({ onBack }: { onBack: () => void }) {
     [symbols, selectedId],
   )
 
-  const refreshModel = useCallback((languageId: string) => {
-    modelStatus(languageId)
-      .then(setModel)
-      .catch(() => setModel(null))
-  }, [])
+  const refresh = useCallback(async () => {
+    const found = await listSymbols(sign.id)
+    setSymbols(found)
+    setSelectedId((current) => current ?? found[0]?.id ?? null)
+    modelStatus(language.id).then(setModel).catch(() => setModel(null))
+    return found
+  }, [sign.id, language.id])
+
+  useEffect(() => {
+    refresh().catch((cause) => setFailure(errorMessage(cause)))
+  }, [refresh])
 
   const handleSaved = useCallback(
     (stored: StoredView) => {
@@ -83,107 +196,43 @@ export function TrainerScreen({ onBack }: { onBack: () => void }) {
         `Saved ${stored.sample_count} sample${stored.sample_count === 1 ? '' : 's'} ` +
           `to “${stored.view}” — ${stored.quality}.`,
       )
-      if (active) {
-        void listSymbols(active.sign.id).then(setSymbols).catch(() => undefined)
-        refreshModel(active.language.id)
-      }
+      refresh().catch(() => undefined)
     },
-    [active, refreshModel],
+    [refresh],
   )
 
-  const capture = useCapture({ handsRef, onSaved: handleSaved })
-
-  // Load every sign the user owns, flattened across languages — the trainer
-  // works one sign at a time, so the language is context rather than a step.
-  useEffect(() => {
-    const controller = new AbortController()
-    listLanguages(controller.signal)
-      .then(async (languages) => {
-        const pairs: { sign: Sign; language: Language }[] = []
-        for (const language of languages) {
-          const found = await listSigns(language.id, controller.signal)
-          for (const sign of found) pairs.push({ sign, language })
-        }
-        if (controller.signal.aborted) return
-        setSigns(pairs)
-      })
-      .catch((cause) => {
-        if (!controller.signal.aborted) setFailure(errorMessage(cause))
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false)
-      })
-    return () => controller.abort()
-  }, [])
-
-  async function open(pair: { sign: Sign; language: Language }) {
-    setActive(pair)
-    setFailure(null)
-    setSaved(null)
-    try {
-      const found = await listSymbols(pair.sign.id)
-      setSymbols(found)
-      setSelectedId(found[0]?.id ?? null)
-      refreshModel(pair.language.id)
-    } catch (cause) {
-      setFailure(errorMessage(cause))
-    }
-  }
-
-  function leave() {
-    capture.cancel()
-    setCameraOn(false)
-    setActive(null)
-    setSymbols([])
-    setSelectedId(null)
-    setModel(null)
-  }
-
-  if (loading) {
-    return (
-      <Shell onBack={onBack} title="Trainer">
-        <div className="flex flex-1 items-center justify-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-          Loading your vocabulary&hellip;
-        </div>
-      </Shell>
-    )
-  }
-
-  if (!active) {
-    return (
-      <Shell onBack={onBack} title="Trainer">
-        <VocabularyPicker
-          signs={signs}
-          failure={failure}
-          onOpen={open}
-          onCreated={(pair) => {
-            setSigns((prev) => [...prev, pair])
-            void open(pair)
-          }}
-          onFailure={setFailure}
-        />
-      </Shell>
-    )
-  }
+  const capture = useCapture({
+    handsRef,
+    onSaved: handleSaved,
+    target: language.sample_target,
+  })
 
   const busy = capture.phase !== 'idle'
 
+  // What the language said it expects, so the capture button can say so too.
+  const wantedHands = language.hand_control === 'both' ? 2 : 1
+  const handsWrong = stage.state === 'live' && handCount > 0 && handCount !== wantedHands
+
   return (
     <Shell
-      onBack={leave}
-      backLabel="All vocabularies"
-      title={active.sign.name}
-      subtitle={active.language.name}
+      onBack={onBack}
+      backLabel="All sign languages"
+      title={sign.name}
+      subtitle={`${language.name} · ${language.hand_control} · ${language.sample_target} frames`}
+      action={
+        <Button variant="ghost" size="sm" onClick={onEditDetails} className="text-muted-foreground">
+          <Pencil aria-hidden="true" />
+          Edit details
+        </Button>
+      }
     >
-      <div className="grid flex-1 gap-6 lg:grid-cols-[1fr_20rem]">
+      <div className="grid flex-1 gap-6 lg:grid-cols-[1fr_22rem]">
         <div className="flex min-w-0 flex-col gap-4">
           {failure && <FormAlert>{failure}</FormAlert>}
           {capture.error && <FormAlert>{capture.error}</FormAlert>}
           {saved && !busy && <FormAlert tone="success">{saved}</FormAlert>}
 
           <div className="relative aspect-video w-full overflow-hidden rounded-2xl border bg-black">
-            {/* Never shown: it is the source the mirrored canvas is drawn from. */}
             <video ref={stage.videoRef} className="hidden" playsInline muted />
             <canvas
               ref={stage.canvasRef}
@@ -228,6 +277,13 @@ export function TrainerScreen({ onBack }: { onBack: () => void }) {
                     : `${handCount} hand${handCount === 1 ? '' : 's'}`}
                   <span className="text-white/50">· {stage.fps} fps</span>
                 </span>
+
+                {handsWrong && !busy && (
+                  <span className="absolute bottom-3 left-3 rounded-full bg-warning/90 px-3 py-1 text-xs font-medium text-black backdrop-blur">
+                    This language is set to “{language.hand_control}” — show{' '}
+                    {wantedHands} hand{wantedHands === 1 ? '' : 's'}
+                  </span>
+                )}
 
                 {capture.phase === 'countdown' && (
                   <div className="absolute inset-0 flex items-center justify-center">
@@ -323,25 +379,29 @@ export function TrainerScreen({ onBack }: { onBack: () => void }) {
         </div>
 
         <SymbolPanel
-          sign={active.sign}
+          signName={sign.name}
           symbols={symbols}
           selectedId={selectedId}
           model={model}
           disabled={busy}
           onSelect={setSelectedId}
           onAdd={async (name) => {
-            const created = await createSymbol(active.sign.id, name)
-            setSymbols(await listSymbols(active.sign.id))
+            const created = await createSymbol(sign.id, name)
+            await refresh()
             setSelectedId(created.id)
+          }}
+          onSaveOutput={async (symbolId, changes) => {
+            await updateSymbol(symbolId, changes)
+            await refresh()
           }}
           onDelete={async (symbolId) => {
             await deleteSymbol(symbolId)
-            const remaining = await listSymbols(active.sign.id)
+            const remaining = await listSymbols(sign.id)
             setSymbols(remaining)
             setSelectedId((current) =>
               current === symbolId ? (remaining[0]?.id ?? null) : current,
             )
-            refreshModel(active.language.id)
+            modelStatus(language.id).then(setModel).catch(() => setModel(null))
           }}
           onFailure={setFailure}
         />
@@ -350,128 +410,37 @@ export function TrainerScreen({ onBack }: { onBack: () => void }) {
   )
 }
 
-// ---------------------------------------------------------------- vocabulary --
-
-function VocabularyPicker({
-  signs,
-  failure,
-  onOpen,
-  onCreated,
-  onFailure,
-}: {
-  signs: { sign: Sign; language: Language }[]
-  failure: string | null
-  onOpen: (pair: { sign: Sign; language: Language }) => void
-  onCreated: (pair: { sign: Sign; language: Language }) => void
-  onFailure: (message: string) => void
-}) {
-  const [name, setName] = useState('')
-  const [language, setLanguage] = useState('')
-  const [creating, setCreating] = useState(false)
-
-  async function submit(event: FormEvent) {
-    event.preventDefault()
-    if (!name.trim()) return
-    setCreating(true)
-    try {
-      const result = await createVocabulary({ name: name.trim(), language: language.trim() })
-      setName('')
-      setLanguage('')
-      onCreated({ sign: result.sign, language: result.language })
-    } catch (cause) {
-      onFailure(errorMessage(cause))
-    } finally {
-      setCreating(false)
-    }
-  }
-
-  return (
-    <div className="flex flex-1 flex-col gap-6">
-      {failure && <FormAlert>{failure}</FormAlert>}
-
-      <form
-        onSubmit={submit}
-        className="flex flex-col gap-3 rounded-xl border bg-elevated p-4 sm:flex-row sm:items-end"
-      >
-        <label className="flex flex-1 flex-col gap-2 text-sm">
-          <span className="font-medium">New vocabulary</span>
-          <Input
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            placeholder="Alphabet"
-          />
-        </label>
-        <label className="flex flex-1 flex-col gap-2 text-sm">
-          <span className="font-medium text-muted-foreground">Language (optional)</span>
-          <Input
-            value={language}
-            onChange={(event) => setLanguage(event.target.value)}
-            placeholder="ASL"
-          />
-        </label>
-        <Button type="submit" size="xl" disabled={!name.trim() || creating}>
-          {creating ? <Loader2 className="animate-spin" aria-hidden="true" /> : <Plus aria-hidden="true" />}
-          Create
-        </Button>
-      </form>
-
-      {signs.length === 0 ? (
-        <p className="text-sm leading-relaxed text-muted-foreground">
-          Nothing trained yet. Create a vocabulary above — a set like “Alphabet” or
-          “Greetings” — then add the individual signs to record inside it.
-        </p>
-      ) : (
-        <div className="grid gap-3 sm:grid-cols-2">
-          {signs.map((pair) => (
-            <button
-              key={pair.sign.id}
-              type="button"
-              onClick={() => onOpen(pair)}
-              className={cn(
-                'group flex flex-col gap-1 rounded-xl border border-border bg-elevated p-4 text-left',
-                'transition-[border-color,box-shadow,transform] duration-150',
-                'hover:-translate-y-0.5 hover:border-primary/45 hover:shadow-raised',
-                'focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/35',
-              )}
-            >
-              <span className="font-semibold tracking-tight">{pair.sign.name}</span>
-              <span className="text-xs text-muted-foreground">
-                {pair.language.name} · {pair.sign.symbol_count} symbol
-                {pair.sign.symbol_count === 1 ? '' : 's'}
-              </span>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-// -------------------------------------------------------------------- symbols --
+// ------------------------------------------------------------------- symbols --
 
 function SymbolPanel({
-  sign,
+  signName,
   symbols,
   selectedId,
   model,
   disabled,
   onSelect,
   onAdd,
+  onSaveOutput,
   onDelete,
   onFailure,
 }: {
-  sign: Sign
+  signName: string
   symbols: Symbol[]
   selectedId: string | null
   model: ModelStatus | null
   disabled: boolean
   onSelect: (id: string) => void
   onAdd: (name: string) => Promise<void>
+  onSaveOutput: (
+    id: string,
+    changes: { outputKind: OutputKind; outputValue: string },
+  ) => Promise<void>
   onDelete: (id: string) => Promise<void>
   onFailure: (message: string) => void
 }) {
   const [name, setName] = useState('')
   const [adding, setAdding] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
 
   async function submit(event: FormEvent) {
     event.preventDefault()
@@ -490,7 +459,7 @@ function SymbolPanel({
   return (
     <aside className="flex flex-col gap-4 rounded-xl border bg-elevated p-4">
       <div className="flex flex-col gap-1">
-        <h3 className="font-semibold tracking-tight">Symbols in {sign.name}</h3>
+        <h3 className="font-semibold tracking-tight">Symbols in {signName}</h3>
         <p className="text-xs leading-relaxed text-muted-foreground">
           {model?.trained
             ? `Model ready — ${model.labels.length} label${
@@ -514,14 +483,14 @@ function SymbolPanel({
 
       {symbols.length === 0 ? (
         <p className="text-xs leading-relaxed text-muted-foreground">
-          No symbols yet. Each one is a label the interpreter can return.
+          No symbols yet. Each one is a label the interpreter can return — a letter, a
+          word, a phrase, or a key like space.
         </p>
       ) : (
-        <ul className="flex max-h-96 flex-col gap-1.5 overflow-y-auto">
+        <ul className="flex max-h-[26rem] flex-col gap-1.5 overflow-y-auto">
           {symbols.map((symbol) => {
-            const best = symbol.views.reduce((max, v) => Math.max(max, v.samples), 0)
-            const ready = best >= SAMPLES_FOR_READY
             const selected = symbol.id === selectedId
+            const editing = symbol.id === editingId
 
             return (
               <li key={symbol.id}>
@@ -539,20 +508,26 @@ function SymbolPanel({
                     disabled={disabled}
                     className="flex min-w-0 flex-1 items-center gap-2 text-left disabled:cursor-not-allowed"
                   >
-                    {ready ? (
+                    {symbol.sample_count > 0 ? (
                       <CircleCheck className="size-4 shrink-0 text-success" aria-hidden="true" />
                     ) : (
-                      <span
-                        className={cn(
-                          'size-2 shrink-0 rounded-full',
-                          symbol.sample_count > 0 ? 'bg-warning' : 'bg-muted-foreground/40',
-                        )}
-                      />
+                      <span className="size-2 shrink-0 rounded-full bg-muted-foreground/40" />
                     )}
                     <span className="truncate text-sm font-medium">{symbol.name}</span>
                     <span className="ml-auto shrink-0 font-mono text-[0.6875rem] text-muted-foreground">
                       {symbol.sample_count}
                     </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setEditingId(editing ? null : symbol.id)}
+                    disabled={disabled}
+                    aria-label={`Edit what ${symbol.name} types`}
+                    aria-expanded={editing}
+                    className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <Pencil className="size-3.5" aria-hidden="true" />
                   </button>
 
                   <button
@@ -568,9 +543,24 @@ function SymbolPanel({
                   </button>
                 </div>
 
-                {selected && symbol.views.length > 0 && (
+                {editing ? (
+                  <OutputEditor
+                    symbol={symbol}
+                    onCancel={() => setEditingId(null)}
+                    onSave={async (changes) => {
+                      try {
+                        await onSaveOutput(symbol.id, changes)
+                        setEditingId(null)
+                      } catch (cause) {
+                        onFailure(errorMessage(cause))
+                      }
+                    }}
+                  />
+                ) : (
                   <p className="px-2.5 pt-1 font-mono text-[0.6875rem] text-muted-foreground">
-                    {symbol.views.map((v) => `${v.view} ${v.samples}`).join(' · ')}
+                    types {JSON.stringify(outputPreview(symbol))}
+                    {symbol.views.length > 0 &&
+                      ` · ${symbol.views.map((v) => `${v.view} ${v.samples}`).join(' · ')}`}
                   </p>
                 )}
               </li>
@@ -582,19 +572,92 @@ function SymbolPanel({
   )
 }
 
-// ---------------------------------------------------------------------- shell --
+/** What this symbol types when the translator recognises it. */
+function OutputEditor({
+  symbol,
+  onSave,
+  onCancel,
+}: {
+  symbol: Symbol
+  onSave: (changes: { outputKind: OutputKind; outputValue: string }) => Promise<void>
+  onCancel: () => void
+}) {
+  const [kind, setKind] = useState<OutputKind>(symbol.output_kind)
+  const [value, setValue] = useState(symbol.output_value)
+  const [saving, setSaving] = useState(false)
+
+  const hint = OUTPUT_KINDS.find((option) => option.value === kind)?.hint
+  const needsValue = kind === 'key' || kind === 'combo'
+
+  return (
+    <div className="mt-1.5 flex flex-col gap-2 rounded-lg border bg-card p-2.5">
+      <Select
+        value={kind}
+        aria-label={`What ${symbol.name} types`}
+        onChange={(event) => setKind(event.target.value as OutputKind)}
+        className="h-8 text-xs"
+      >
+        {OUTPUT_KINDS.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </Select>
+
+      {kind !== 'space' && (
+        <Input
+          value={value}
+          onChange={(event) => setValue(event.target.value)}
+          placeholder={
+            kind === 'text'
+              ? `${symbol.name} (or a phrase)`
+              : kind === 'key'
+                ? 'Enter, Backspace, Tab…'
+                : 'Ctrl+C, Alt+Tab…'
+          }
+          className="h-8 text-xs"
+        />
+      )}
+
+      <p className="text-[0.6875rem] leading-relaxed text-muted-foreground">{hint}</p>
+
+      <div className="flex gap-1.5">
+        <Button
+          size="sm"
+          className="flex-1"
+          disabled={saving || (needsValue && !value.trim())}
+          onClick={() => {
+            setSaving(true)
+            void onSave({ outputKind: kind, outputValue: value }).finally(() =>
+              setSaving(false),
+            )
+          }}
+        >
+          {saving ? <Loader2 className="animate-spin" aria-hidden="true" /> : 'Save'}
+        </Button>
+        <Button size="sm" variant="ghost" onClick={onCancel} disabled={saving}>
+          Cancel
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+// --------------------------------------------------------------------- shell --
 
 function Shell({
   onBack,
   backLabel = 'Home',
   title,
   subtitle,
+  action,
   children,
 }: {
   onBack: () => void
   backLabel?: string
   title: string
   subtitle?: string
+  action?: React.ReactNode
   children: React.ReactNode
 }) {
   return (
@@ -606,14 +669,17 @@ function Shell({
             {backLabel}
           </Button>
           <span className="h-4 w-px shrink-0 bg-border" aria-hidden="true" />
-          <div className="flex min-w-0 items-baseline gap-2">
-            <h2 className="truncate font-semibold tracking-tight">{title}</h2>
+          <div className="flex min-w-0 flex-col">
+            <h2 className="truncate font-semibold leading-tight tracking-tight">{title}</h2>
             {subtitle && (
               <span className="truncate text-xs text-muted-foreground">{subtitle}</span>
             )}
           </div>
         </div>
-        <SignTalkLockup className="hidden sm:flex" />
+        <div className="flex shrink-0 items-center gap-2">
+          {action}
+          <SignTalkLockup className="hidden sm:flex" />
+        </div>
       </header>
 
       <div className="flex flex-1 flex-col gap-6 px-5 py-6 sm:px-8">{children}</div>

@@ -2,21 +2,12 @@ import type { ReactNode } from 'react'
 import { SignTalkMark } from '@/components/signtalk-mark'
 import { ThemeToggle } from '@/components/theme-toggle'
 
-const titles: Record<string, string> = {
-  login: 'SignTalk — Sign in',
-  signup: 'SignTalk — Create account',
-  forgot: 'SignTalk — Reset password',
-  loading: 'SignTalk — Starting up',
-  home: 'SignTalk',
-  trainer: 'SignTalk — Trainer',
-  community: 'SignTalk — Community Database',
-}
-
 export function AppWindow({
-  screen,
+  title,
   children,
 }: {
-  screen: string
+  /** Text in the window chrome. Each route passes its own. */
+  title: string
   children: ReactNode
 }) {
   return (
@@ -42,7 +33,7 @@ export function AppWindow({
           <div className="flex min-w-0 flex-1 items-center justify-center gap-2">
             <SignTalkMark compact className="size-4 shrink-0" />
             <span className="truncate text-xs font-medium tracking-tight text-muted-foreground">
-              {titles[screen] ?? 'SignTalk'}
+              {title}
             </span>
           </div>
 

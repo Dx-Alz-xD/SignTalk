@@ -16,6 +16,8 @@ import { TextField, PasswordField } from '@/components/ui/field'
 import { AuthLayout, AuthHeading, BackButton } from '@/components/auth-layout'
 import { CodeInput, emptyCode } from '@/components/code-input'
 import { FormAlert } from '@/components/form-alert'
+import { Breadcrumbs } from '@/components/breadcrumbs'
+import type { Crumb } from '@/components/structured-data'
 import { errorMessage } from '@/lib/api'
 import {
   requestRecoveryCode,
@@ -33,11 +35,14 @@ type Step = 'choose' | 'identify' | 'code' | 'reset'
 const RESEND_SECONDS = 30
 
 export function ForgotPasswordScreen({
+  crumbs,
   initialEmail = '',
   onBack,
   onSignedIn,
   onReset,
 }: {
+  /** Visible breadcrumb trail, matching the JSON-LD the route emits. */
+  crumbs?: Crumb[]
   /** Whatever address the user last used, so it is only typed once. */
   initialEmail?: string
   onBack: () => void
@@ -190,6 +195,7 @@ export function ForgotPasswordScreen({
 
   return (
     <AuthLayout>
+      {crumbs && <Breadcrumbs crumbs={crumbs} />}
       <BackButton onClick={goBack}>{backLabel}</BackButton>
 
       {step === 'choose' && (

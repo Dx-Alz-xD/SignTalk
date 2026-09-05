@@ -58,7 +58,7 @@ function codeOf(payload: Payload, status: number): string {
 }
 
 export type RequestOptions = {
-  method?: 'GET' | 'POST' | 'DELETE'
+  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE'
   body?: unknown
   signal?: AbortSignal
 }

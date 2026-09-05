@@ -6,16 +6,21 @@ import { Button } from '@/components/ui/button'
 import { TextField, PasswordField } from '@/components/ui/field'
 import { AuthLayout, AuthHeading, LegalNote } from '@/components/auth-layout'
 import { FormAlert } from '@/components/form-alert'
+import { Breadcrumbs } from '@/components/breadcrumbs'
+import type { Crumb } from '@/components/structured-data'
 import { errorMessage } from '@/lib/api'
 import { signIn, type Account } from '@/lib/auth'
 
 export function LoginScreen({
+  crumbs,
   initialEmail = '',
   notice,
   onSignedIn,
   onSignUp,
   onForgotPassword,
 }: {
+  /** Visible breadcrumb trail, matching the JSON-LD the route emits. */
+  crumbs?: Crumb[]
   /** Prefilled after a reset or a sign-out, so it is only typed once. */
   initialEmail?: string
   /** Carried over from another screen, e.g. after a password reset. */
@@ -58,6 +63,7 @@ export function LoginScreen({
 
   return (
     <AuthLayout>
+      {crumbs && <Breadcrumbs crumbs={crumbs} />}
       <AuthHeading
         title="Welcome back"
         description="Sign in to continue to your interpreter and trainer."
