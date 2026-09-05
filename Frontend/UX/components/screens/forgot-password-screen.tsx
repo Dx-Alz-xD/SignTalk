@@ -8,43 +8,66 @@ import {
   MailCheck,
   MessageSquare,
   MessageSquareMore,
+  ShieldCheck,
   type LucideIcon,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { TextField } from '@/components/ui/field'
+import { TextField, PasswordField } from '@/components/ui/field'
 import { AuthLayout, AuthHeading, BackButton } from '@/components/auth-layout'
 import { CodeInput, emptyCode } from '@/components/code-input'
-import { maskPhone } from '@/lib/country-codes'
-import { validateEmail } from '@/lib/validation'
+import { FormAlert } from '@/components/form-alert'
+import { errorMessage } from '@/lib/api'
+import {
+  requestRecoveryCode,
+  resetPassword,
+  signInWithTicket,
+  verifyRecoveryCode,
+  type Account,
+  type Channel,
+} from '@/lib/auth'
+import { validateEmail, validatePassword } from '@/lib/validation'
 import { cn } from '@/lib/utils'
-import type { SignUpDetails } from '@/components/screens/signup-screen'
 
-type Method = 'email' | 'sms'
-type Step = 'choose' | 'identify' | 'code'
+type Step = 'choose' | 'identify' | 'code' | 'reset'
 
 const RESEND_SECONDS = 30
 
 export function ForgotPasswordScreen({
-  account,
+  initialEmail = '',
   onBack,
-  onVerified,
+  onSignedIn,
+  onReset,
 }: {
-  account: SignUpDetails | null
+  /** Whatever address the user last used, so it is only typed once. */
+  initialEmail?: string
   onBack: () => void
-  onVerified: () => void
+  /** The ticket was spent on a passwordless sign-in. */
+  onSignedIn: (account: Account) => void
+  /** The ticket was spent on a new password; every session is gone with it. */
+  onReset: (message: string, email: string) => void
 }) {
   const [step, setStep] = useState<Step>('choose')
-  const [method, setMethod] = useState<Method>('email')
-  const [email, setEmail] = useState(account?.email ?? '')
+  const [method, setMethod] = useState<Channel>('email')
+  const [email, setEmail] = useState(initialEmail)
   const [emailError, setEmailError] = useState<string | null>(null)
   const [code, setCode] = useState<string[]>(emptyCode)
-  const [submitting, setSubmitting] = useState(false)
+  const [busy, setBusy] = useState(false)
   const [cooldown, setCooldown] = useState(0)
+  const [failure, setFailure] = useState<string | null>(null)
+
+  // Where the server says it sent the code, already masked by the backend.
+  const [sentTo, setSentTo] = useState<string | null>(null)
+  // Null once the server has nothing to send to. The screen looks identical
+  // either way — which accounts exist is not something this flow may reveal.
+  const [challengeId, setChallengeId] = useState<string | null>(null)
+  const [ticketId, setTicketId] = useState<string | null>(null)
+
+  const [password, setPassword] = useState('')
+  const [confirm, setConfirm] = useState('')
+  const [passwordError, setPasswordError] = useState<string | null>(null)
 
   const codeComplete = code.every((digit) => digit !== '')
-  const phoneLabel = account?.phone
-    ? maskPhone(account.dial, account.phone)
-    : 'the phone number on your account'
+  const mismatch = confirm.length > 0 && confirm !== password
 
   useEffect(() => {
     if (cooldown <= 0) return
@@ -52,33 +75,49 @@ export function ForgotPasswordScreen({
     return () => clearTimeout(timer)
   }, [cooldown])
 
-  function startCodeStep(next: Method) {
-    setMethod(next)
-    setCode(emptyCode())
-    setCooldown(RESEND_SECONDS)
-    setStep('code')
-  }
+  /** Ask for a code and move to the code step, whatever the server has to send to. */
+  const sendCode = useCallback(async (address: string, channel: Channel) => {
+    setBusy(true)
+    setFailure(null)
+    try {
+      const result = await requestRecoveryCode(address, channel)
+      setChallengeId(result.challengeId)
+      setSentTo(result.sentTo)
+      setCode(emptyCode())
+      setCooldown(RESEND_SECONDS)
+      setStep('code')
+    } catch (error) {
+      setFailure(errorMessage(error))
+    } finally {
+      setBusy(false)
+    }
+  }, [])
 
-  function chooseMethod(next: Method) {
+  function chooseMethod(next: Channel) {
     setMethod(next)
+    setFailure(null)
     setCode(emptyCode())
-    // SMS goes straight to the phone captured at sign-up, so no identify step.
-    if (next === 'sms') startCodeStep('sms')
-    else setStep('identify')
+    // Both channels start from the email address: it is what identifies the
+    // account, and SMS goes to whatever number is on file for it.
+    setStep('identify')
   }
 
   function goBack() {
+    setFailure(null)
     if (step === 'choose') onBack()
     else if (step === 'identify') setStep('choose')
-    else setStep(method === 'sms' ? 'choose' : 'identify')
+    else if (step === 'code') setStep('identify')
+    else setStep('code')
   }
 
   const backLabel =
     step === 'choose'
       ? 'Back to log in'
-      : step === 'identify' || method === 'sms'
+      : step === 'identify'
         ? 'Choose another method'
-        : 'Change email'
+        : step === 'code'
+          ? 'Change email'
+          : 'Back'
 
   function submitEmail(event: FormEvent) {
     event.preventDefault()
@@ -88,13 +127,66 @@ export function ForgotPasswordScreen({
       return
     }
     setEmailError(null)
-    startCodeStep('email')
+    void sendCode(email.trim(), method)
   }
 
-  const verify = useCallback(() => {
-    setSubmitting(true)
-    onVerified()
-  }, [onVerified])
+  const verify = useCallback(
+    async (entered: string) => {
+      // No challenge means the request found nothing to send to. The code
+      // cannot be right, and saying anything more specific would answer a
+      // question this flow refuses to answer.
+      if (!challengeId) {
+        setFailure('That code is not valid. Check the address and request a new one.')
+        return
+      }
+      setBusy(true)
+      setFailure(null)
+      try {
+        setTicketId(await verifyRecoveryCode(challengeId, entered))
+        setStep('reset')
+      } catch (error) {
+        // The server counts the attempts and says how many are left.
+        setFailure(errorMessage(error))
+        setCode(emptyCode())
+      } finally {
+        setBusy(false)
+      }
+    },
+    [challengeId],
+  )
+
+  async function submitNewPassword(event: FormEvent) {
+    event.preventDefault()
+    const error = validatePassword(password)
+    if (error || confirm !== password) {
+      setPasswordError(error ?? 'Passwords don’t match.')
+      return
+    }
+    if (!ticketId) return
+
+    setPasswordError(null)
+    setBusy(true)
+    setFailure(null)
+    try {
+      onReset(await resetPassword(ticketId, password), email.trim())
+    } catch (error) {
+      setFailure(errorMessage(error))
+      setBusy(false)
+    }
+  }
+
+  /** The other thing the ticket can buy: one sign-in, password untouched. */
+  async function useTicketToSignIn() {
+    if (!ticketId) return
+    setBusy(true)
+    setFailure(null)
+    try {
+      onSignedIn(await signInWithTicket(ticketId))
+    } catch (error) {
+      setFailure(errorMessage(error))
+      setBusy(false)
+    }
+  }
 
   return (
     <AuthLayout>
@@ -116,7 +208,7 @@ export function ForgotPasswordScreen({
             <MethodOption
               icon={MessageSquare}
               title="SMS code"
-              description={`Text a verification code to ${phoneLabel}.`}
+              description="Text a verification code to the number on your account."
               onClick={() => chooseMethod('sms')}
             />
           </div>
@@ -126,10 +218,15 @@ export function ForgotPasswordScreen({
       {step === 'identify' && (
         <>
           <AuthHeading
-            title="Verify by email"
-            description="Enter the email on your account and we&rsquo;ll send a code."
+            title={method === 'email' ? 'Verify by email' : 'Verify by SMS'}
+            description={
+              method === 'email'
+                ? 'Enter the email on your account and we’ll send a code.'
+                : 'Enter the email on your account. We’ll text the code to the number saved on it.'
+            }
           />
           <form className="flex flex-col gap-5" onSubmit={submitEmail} noValidate>
+            {failure && <FormAlert>{failure}</FormAlert>}
             <TextField
               label="Email"
               type="email"
@@ -142,10 +239,18 @@ export function ForgotPasswordScreen({
               onChange={(event) => {
                 setEmail(event.target.value)
                 setEmailError(null)
+                setFailure(null)
               }}
             />
-            <Button type="submit" size="xl" className="w-full">
-              Send verification code
+            <Button type="submit" size="xl" className="w-full" disabled={busy}>
+              {busy ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                  Sending&hellip;
+                </>
+              ) : (
+                'Send verification code'
+              )}
             </Button>
           </form>
         </>
@@ -164,9 +269,9 @@ export function ForgotPasswordScreen({
             title={method === 'email' ? 'Check your email' : 'Check your messages'}
             description={
               <>
-                We sent a code to{' '}
+                If that account exists, a code is on its way to{' '}
                 <span className="font-medium text-foreground">
-                  {method === 'email' ? email || 'your email' : phoneLabel}
+                  {sentTo ?? (method === 'email' ? email : 'the number on the account')}
                 </span>
                 . Enter it below to verify it&rsquo;s you.
               </>
@@ -177,23 +282,29 @@ export function ForgotPasswordScreen({
             className="flex flex-col gap-6"
             onSubmit={(event) => {
               event.preventDefault()
-              verify()
+              void verify(code.join(''))
             }}
           >
+            {failure && <FormAlert>{failure}</FormAlert>}
+
             <fieldset className="flex flex-col gap-3">
               <legend className="mb-3 text-[0.8125rem] font-medium">Verification code</legend>
               <CodeInput
                 value={code}
-                onChange={setCode}
-                onComplete={verify}
-                disabled={submitting}
+                onChange={(next) => {
+                  setCode(next)
+                  setFailure(null)
+                }}
+                onComplete={(entered) => void verify(entered)}
+                invalid={Boolean(failure)}
+                disabled={busy}
               />
               <p className="text-xs leading-relaxed text-muted-foreground">
                 Didn&rsquo;t get it?{' '}
                 <button
                   type="button"
-                  disabled={cooldown > 0}
-                  onClick={() => setCooldown(RESEND_SECONDS)}
+                  disabled={cooldown > 0 || busy}
+                  onClick={() => void sendCode(email.trim(), method)}
                   className="rounded-sm font-medium text-primary underline-offset-4 transition-colors hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:text-muted-foreground disabled:no-underline"
                 >
                   {cooldown > 0 ? `Resend in ${cooldown}s` : 'Resend code'}
@@ -201,29 +312,100 @@ export function ForgotPasswordScreen({
                 {' · '}
                 <button
                   type="button"
-                  onClick={() => chooseMethod(method === 'email' ? 'sms' : 'email')}
-                  className="rounded-sm font-medium text-primary underline-offset-4 transition-colors hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  disabled={busy}
+                  onClick={() => {
+                    const next: Channel = method === 'email' ? 'sms' : 'email'
+                    setMethod(next)
+                    void sendCode(email.trim(), next)
+                  }}
+                  className="rounded-sm font-medium text-primary underline-offset-4 transition-colors hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:text-muted-foreground disabled:no-underline"
                 >
                   {method === 'email' ? 'Use SMS instead' : 'Use email instead'}
                 </button>
               </p>
             </fieldset>
 
-            <Button
-              type="submit"
-              size="xl"
-              className="w-full"
-              disabled={!codeComplete || submitting}
-            >
-              {submitting ? (
+            <Button type="submit" size="xl" className="w-full" disabled={!codeComplete || busy}>
+              {busy ? (
                 <>
                   <Loader2 className="size-4 animate-spin" aria-hidden="true" />
                   Verifying&hellip;
                 </>
               ) : (
-                'Verify and log in'
+                'Verify code'
               )}
             </Button>
+          </form>
+        </>
+      )}
+
+      {step === 'reset' && (
+        <>
+          <AuthHeading
+            icon={<ShieldCheck className="size-5" aria-hidden="true" />}
+            title="Choose a new password"
+            description="That code checked out. Set a new password, or skip it and sign in this once."
+          />
+
+          <form className="flex flex-col gap-5" onSubmit={submitNewPassword} noValidate>
+            {failure && <FormAlert>{failure}</FormAlert>}
+
+            <PasswordField
+              label="New password"
+              autoComplete="new-password"
+              placeholder="At least 8 characters"
+              showStrength
+              autoFocus
+              value={password}
+              error={passwordError}
+              onChange={(event) => {
+                setPassword(event.target.value)
+                setPasswordError(null)
+                setFailure(null)
+              }}
+            />
+
+            <PasswordField
+              label="Confirm new password"
+              autoComplete="new-password"
+              placeholder="Re-enter your new password"
+              value={confirm}
+              error={mismatch ? 'Passwords don’t match.' : null}
+              onChange={(event) => {
+                setConfirm(event.target.value)
+                setPasswordError(null)
+              }}
+            />
+
+            <div className="flex flex-col gap-3">
+              <Button type="submit" size="xl" className="w-full" disabled={mismatch || busy}>
+                {busy ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                    Saving&hellip;
+                  </>
+                ) : (
+                  'Save password'
+                )}
+              </Button>
+
+              {/* The ticket is single-use, so this is the other branch of the
+                  same decision rather than something to do afterwards. */}
+              <Button
+                type="button"
+                variant="outline"
+                size="xl"
+                className="w-full"
+                disabled={busy}
+                onClick={() => void useTicketToSignIn()}
+              >
+                Skip — log me in this once
+              </Button>
+            </div>
+
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              Saving a new password signs you out everywhere else.
+            </p>
           </form>
         </>
       )}

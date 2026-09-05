@@ -6,12 +6,14 @@ import {
   GraduationCap,
   Keyboard,
   Languages,
+  LogOut,
   type LucideIcon,
 } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { SignTalkLockup } from '@/components/signtalk-mark'
+import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import type { SignUpDetails } from '@/components/screens/signup-screen'
+import type { Account } from '@/lib/auth'
 
 type Action = {
   title: string
@@ -20,6 +22,7 @@ type Action = {
   meta: string
   /** Muted chip for things that aren't wired up yet. */
   pending?: boolean
+  onOpen?: () => void
 }
 
 const featured: Action = {
@@ -30,12 +33,15 @@ const featured: Action = {
   meta: 'Camera · live',
 }
 
-const actions: Action[] = [
+/** Built per render so the wired-up cards can carry their handler. */
+function buildActions(onTrainer: () => void): Action[] {
+  return [
   {
     title: 'Trainer',
     description: 'Record a new letter, word, or phrase and add it to your vocabulary.',
     icon: GraduationCap,
     meta: 'Any sign language',
+    onOpen: onTrainer,
   },
   {
     title: 'Direct Paste',
@@ -51,9 +57,10 @@ const actions: Action[] = [
     meta: 'Not connected',
     pending: true,
   },
-]
+  ]
+}
 
-function initials(account: SignUpDetails | null) {
+function initials(account: Account | null) {
   const source = account?.username?.trim() || account?.email?.split('@')[0] || ''
   if (!source) return 'ST'
   const words = source.split(/[\s._-]+/).filter(Boolean)
@@ -62,14 +69,28 @@ function initials(account: SignUpDetails | null) {
   return letters.toUpperCase()
 }
 
-export function HomeScreen({ account = null }: { account?: SignUpDetails | null }) {
+export function HomeScreen({
+  account = null,
+  onSignOut,
+  onOpenTrainer,
+}: {
+  account?: Account | null
+  onSignOut: () => void
+  onOpenTrainer: () => void
+}) {
+  const actions = buildActions(onOpenTrainer)
+
+  // Only ever the first name-ish word: "Welcome back, krish" reads better than
+  // the full address the account happens to be keyed on.
+  const greeting = account?.username?.trim().split(/[\s._-]+/)[0]
+
   return (
     <div className="flex flex-1 flex-col">
       <header className="flex shrink-0 items-center justify-between gap-4 border-b px-5 py-3.5 sm:px-8">
         <SignTalkLockup />
 
         <div className="flex items-center gap-2.5">
-          <span className="flex items-center gap-2 rounded-full border bg-elevated py-1 pl-2.5 pr-3 text-xs text-muted-foreground">
+          <span className="hidden items-center gap-2 rounded-full border bg-elevated py-1 pl-2.5 pr-3 text-xs text-muted-foreground sm:flex">
             <span className="relative flex size-2 shrink-0">
               <span className="absolute inset-0 animate-breathe rounded-full bg-accent" />
               <span className="relative size-2 rounded-full bg-accent" />
@@ -78,16 +99,27 @@ export function HomeScreen({ account = null }: { account?: SignUpDetails | null 
           </span>
           <span
             className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/12 text-[0.6875rem] font-semibold text-primary ring-1 ring-inset ring-primary/20"
-            title={account?.username || account?.email || 'Your account'}
+            title={account ? `${account.username} · ${account.email}` : 'Your account'}
           >
             {initials(account)}
           </span>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onSignOut}
+            className="text-muted-foreground"
+          >
+            <LogOut aria-hidden="true" />
+            Sign out
+          </Button>
         </div>
       </header>
 
       <div className="flex flex-1 flex-col justify-center gap-7 px-5 py-9 sm:px-8">
         <div className="flex flex-col gap-1.5">
-          <h2 className="text-2xl font-semibold tracking-tight">What would you like to do?</h2>
+          <h2 className="text-2xl font-semibold tracking-tight">
+            {greeting ? `Welcome back, ${greeting}.` : 'What would you like to do?'}
+          </h2>
           <p className="text-sm leading-relaxed text-muted-foreground">
             Pick a workspace to get started.
           </p>
@@ -116,9 +148,19 @@ const cardBase = cn(
 
 /** The one thing most people open the app to do, so it gets the most weight. */
 function FeaturedCard({ action }: { action: Action }) {
-  const { title, description, icon: Icon, meta } = action
+  const { title, description, icon: Icon, meta, onOpen } = action
   return (
-    <button type="button" className={cn(cardBase, 'p-5 sm:p-6 hover:border-primary/45')}>
+    <button
+      type="button"
+      onClick={onOpen}
+      disabled={!onOpen}
+      title={onOpen ? undefined : 'Not connected yet'}
+      className={cn(
+        cardBase,
+        'p-5 sm:p-6 hover:border-primary/45',
+        !onOpen && 'cursor-not-allowed opacity-60 hover:translate-y-0 hover:shadow-none',
+      )}
+    >
       <span
         aria-hidden="true"
         className="pointer-events-none absolute -right-16 -top-20 size-52 rounded-full bg-primary opacity-[0.09] blur-3xl transition-opacity duration-300 group-hover:opacity-[0.16]"
@@ -146,11 +188,20 @@ function FeaturedCard({ action }: { action: Action }) {
 }
 
 function ActionCard({ action }: { action: Action }) {
-  const { title, description, icon: Icon, meta, pending } = action
+  const { title, description, icon: Icon, meta, pending, onOpen } = action
   return (
     <button
       type="button"
-      className={cn(cardBase, 'flex min-h-40 flex-col gap-3.5 p-5 hover:border-primary/45')}
+      onClick={onOpen}
+      // Nothing to open yet on the unwired cards — say so rather than
+      // presenting a button that silently does nothing when pressed.
+      disabled={!onOpen}
+      title={onOpen ? undefined : 'Not connected yet'}
+      className={cn(
+        cardBase,
+        'flex min-h-40 flex-col gap-3.5 p-5 hover:border-primary/45',
+        !onOpen && 'cursor-not-allowed opacity-60 hover:translate-y-0 hover:shadow-none',
+      )}
     >
       <span className="flex items-center justify-between">
         <span className="flex size-10 items-center justify-center rounded-lg bg-primary/12 text-primary ring-1 ring-inset ring-primary/20 transition-colors group-hover:bg-primary group-hover:text-primary-foreground group-hover:ring-primary">

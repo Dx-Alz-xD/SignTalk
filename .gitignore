@@ -1,0 +1,4 @@
+# Local credentials: database password, SMTP app password, Twilio token.
+.env
+.env.*
+!.env.example
