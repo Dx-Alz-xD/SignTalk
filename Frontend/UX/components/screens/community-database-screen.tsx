@@ -171,7 +171,7 @@ export function CommunityDatabaseScreen({ onBack }: { onBack: () => void }) {
 
       {filtersOpen && (
         <div className="shrink-0 border-b bg-elevated/60 px-5 py-4 sm:px-8">
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 [&>*]:min-w-0">
             <div className="flex flex-col gap-2">
               <Label htmlFor="filter-name">Name</Label>
               <Input
@@ -194,27 +194,39 @@ export function CommunityDatabaseScreen({ onBack }: { onBack: () => void }) {
                 }
               />
             </div>
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="filter-from">Uploaded between</Label>
-              <div className="flex items-center gap-2">
-                <Input
-                  id="filter-from"
-                  type="date"
-                  aria-label="Uploaded from"
-                  value={filters.from}
-                  onChange={(event) =>
-                    setFilters((current) => ({ ...current, from: event.target.value }))
-                  }
-                />
-                <span className="text-xs text-muted-foreground">to</span>
-                <Input
-                  type="date"
-                  aria-label="Uploaded until"
-                  value={filters.to}
-                  onChange={(event) =>
-                    setFilters((current) => ({ ...current, to: event.target.value }))
-                  }
-                />
+            {/* Stacked: a native date input won't shrink below ~155px, so two
+                of them side by side overflow this column and collide with the
+                next one. */}
+            <div className="flex min-w-0 flex-col gap-2">
+              <span className="text-[0.8125rem] font-medium leading-none">Uploaded between</span>
+              <div className="flex flex-col gap-2">
+                <label className="flex items-center gap-2">
+                  <span className="w-8 shrink-0 text-xs text-muted-foreground">From</span>
+                  <Input
+                    id="filter-from"
+                    type="date"
+                    aria-label="Uploaded from"
+                    value={filters.from}
+                    max={filters.to || undefined}
+                    className="min-w-0 flex-1"
+                    onChange={(event) =>
+                      setFilters((current) => ({ ...current, from: event.target.value }))
+                    }
+                  />
+                </label>
+                <label className="flex items-center gap-2">
+                  <span className="w-8 shrink-0 text-xs text-muted-foreground">To</span>
+                  <Input
+                    type="date"
+                    aria-label="Uploaded until"
+                    value={filters.to}
+                    min={filters.from || undefined}
+                    className="min-w-0 flex-1"
+                    onChange={(event) =>
+                      setFilters((current) => ({ ...current, to: event.target.value }))
+                    }
+                  />
+                </label>
               </div>
             </div>
             <div className="flex flex-col gap-2">
