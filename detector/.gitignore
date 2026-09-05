@@ -1,0 +1,10 @@
+# Downloaded on first run (~7 MB) - not worth versioning.
+models/
+
+# Local training library. Delete this to start from scratch.
+data/
+
+*.tmp
+*.part
+*.corrupt.json
+__pycache__/
