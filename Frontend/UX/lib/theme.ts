@@ -1,8 +1,7 @@
+'use client'
+
 import { useCallback, useEffect, useState } from 'react'
-
-export const THEME_STORAGE_KEY = 'signtalk-theme'
-
-export type Theme = 'light' | 'dark' | 'system'
+import { THEME_STORAGE_KEY, type Theme } from '@/lib/theme-storage'
 
 function systemTheme(): 'light' | 'dark' {
   if (typeof window === 'undefined') return 'dark'

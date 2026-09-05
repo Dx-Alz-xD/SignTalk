@@ -1,7 +1,7 @@
 import { Analytics } from '@vercel/analytics/next'
 import type { Metadata, Viewport } from 'next'
 import { Geist, Geist_Mono } from 'next/font/google'
-import { THEME_STORAGE_KEY } from '@/lib/theme'
+import { THEME_STORAGE_KEY } from '@/lib/theme-storage'
 import './globals.css'
 
 // next/font generates a hashed family name, so the CSS variable is the only

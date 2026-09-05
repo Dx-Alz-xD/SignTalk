@@ -13,3 +13,8 @@ __v0_jsx-dev-runtime.ts
 node_modules
 .next/
 .DS_Store
+# TypeScript incremental build info
+*.tsbuildinfo
+
+# Local editor / agent launch config (machine-specific paths)
+.claude/
