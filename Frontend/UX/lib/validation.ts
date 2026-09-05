@@ -35,7 +35,7 @@ export type PasswordRule = {
 
 export const passwordRules: PasswordRule[] = [
   { id: 'length', label: 'At least 8 characters', test: (v) => v.length >= 8 },
-  { id: 'case', label: 'Upper and lowercase letters', test: (v) => /[a-z]/.test(v) && /[A-Z]/.test(v) },
+  { id: 'case', label: 'Upper & lowercase', test: (v) => /[a-z]/.test(v) && /[A-Z]/.test(v) },
   { id: 'number', label: 'A number', test: (v) => /\d/.test(v) },
   { id: 'symbol', label: 'A symbol', test: (v) => /[^A-Za-z0-9]/.test(v) },
 ]

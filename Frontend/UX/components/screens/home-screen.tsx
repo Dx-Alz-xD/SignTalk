@@ -16,49 +16,50 @@ import { cn } from '@/lib/utils'
 import type { Account } from '@/lib/auth'
 
 type Action = {
+  id: 'translator' | 'trainer' | 'direct-paste' | 'community'
   title: string
   description: string
   icon: LucideIcon
   meta: string
-  /** Muted chip for things that aren't wired up yet. */
+  /** No screen behind this one yet: muted chip, and the card does not open. */
   pending?: boolean
-  onOpen?: () => void
 }
 
 const featured: Action = {
+  id: 'translator',
   title: 'Translator',
   description:
     'Live sign-to-text transcription, with optional translation to other spoken or signed languages.',
   icon: Languages,
   meta: 'Camera · live',
+  pending: true,
 }
 
-/** Built per render so the wired-up cards can carry their handler. */
-function buildActions(onTrainer: () => void): Action[] {
-  return [
+const actions: Action[] = [
   {
+    id: 'trainer',
     title: 'Trainer',
     description: 'Record a new letter, word, or phrase and add it to your vocabulary.',
     icon: GraduationCap,
     meta: 'Any sign language',
-    onOpen: onTrainer,
   },
   {
+    id: 'direct-paste',
     title: 'Direct Paste',
     description:
       'Transcribe in the background, typing into whatever text field has focus.',
     icon: Keyboard,
     meta: 'Background mode',
+    pending: true,
   },
   {
+    id: 'community',
     title: 'Community Database',
     description: 'Share your trained signs, or download sets contributed by others.',
     icon: Database,
-    meta: 'Not connected',
-    pending: true,
+    meta: 'Community',
   },
-  ]
-}
+]
 
 function initials(account: Account | null) {
   const source = account?.username?.trim() || account?.email?.split('@')[0] || ''
@@ -71,15 +72,13 @@ function initials(account: Account | null) {
 
 export function HomeScreen({
   account = null,
+  onOpen,
   onSignOut,
-  onOpenTrainer,
 }: {
   account?: Account | null
+  onOpen: (id: Action['id']) => void
   onSignOut: () => void
-  onOpenTrainer: () => void
 }) {
-  const actions = buildActions(onOpenTrainer)
-
   // Only ever the first name-ish word: "Welcome back, krish" reads better than
   // the full address the account happens to be keyed on.
   const greeting = account?.username?.trim().split(/[\s._-]+/)[0]
@@ -126,10 +125,10 @@ export function HomeScreen({
         </div>
 
         <div className="flex flex-col gap-4">
-          <FeaturedCard action={featured} />
+          <FeaturedCard action={featured} onOpen={onOpen} />
           <div className="grid gap-4 sm:grid-cols-3">
             {actions.map((action) => (
-              <ActionCard key={action.title} action={action} />
+              <ActionCard key={action.id} action={action} onOpen={onOpen} />
             ))}
           </div>
         </div>
@@ -146,20 +145,25 @@ const cardBase = cn(
   'focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/35',
 )
 
+/** Cards with nothing behind them yet look inert rather than merely doing nothing. */
+const inert = 'cursor-not-allowed opacity-60 hover:translate-y-0 hover:shadow-none'
+
 /** The one thing most people open the app to do, so it gets the most weight. */
-function FeaturedCard({ action }: { action: Action }) {
-  const { title, description, icon: Icon, meta, onOpen } = action
+function FeaturedCard({
+  action,
+  onOpen,
+}: {
+  action: Action
+  onOpen: (id: Action['id']) => void
+}) {
+  const { title, description, icon: Icon, meta, pending } = action
   return (
     <button
       type="button"
-      onClick={onOpen}
-      disabled={!onOpen}
-      title={onOpen ? undefined : 'Not connected yet'}
-      className={cn(
-        cardBase,
-        'p-5 sm:p-6 hover:border-primary/45',
-        !onOpen && 'cursor-not-allowed opacity-60 hover:translate-y-0 hover:shadow-none',
-      )}
+      onClick={() => onOpen(action.id)}
+      disabled={pending}
+      title={pending ? 'Not connected yet' : undefined}
+      className={cn(cardBase, 'p-5 sm:p-6 hover:border-primary/45', pending && inert)}
     >
       <span
         aria-hidden="true"
@@ -172,7 +176,7 @@ function FeaturedCard({ action }: { action: Action }) {
         <span className="flex min-w-0 flex-col gap-1.5">
           <span className="flex items-center gap-2">
             <span className="text-lg font-semibold tracking-tight">{title}</span>
-            <Chip>{meta}</Chip>
+            <Chip muted={pending}>{meta}</Chip>
           </span>
           <span className="max-w-xl text-sm leading-relaxed text-muted-foreground">
             {description}
@@ -187,20 +191,24 @@ function FeaturedCard({ action }: { action: Action }) {
   )
 }
 
-function ActionCard({ action }: { action: Action }) {
-  const { title, description, icon: Icon, meta, pending, onOpen } = action
+function ActionCard({
+  action,
+  onOpen,
+}: {
+  action: Action
+  onOpen: (id: Action['id']) => void
+}) {
+  const { title, description, icon: Icon, meta, pending } = action
   return (
     <button
       type="button"
-      onClick={onOpen}
-      // Nothing to open yet on the unwired cards — say so rather than
-      // presenting a button that silently does nothing when pressed.
-      disabled={!onOpen}
-      title={onOpen ? undefined : 'Not connected yet'}
+      onClick={() => onOpen(action.id)}
+      disabled={pending}
+      title={pending ? 'Not connected yet' : undefined}
       className={cn(
         cardBase,
         'flex min-h-40 flex-col gap-3.5 p-5 hover:border-primary/45',
-        !onOpen && 'cursor-not-allowed opacity-60 hover:translate-y-0 hover:shadow-none',
+        pending && inert,
       )}
     >
       <span className="flex items-center justify-between">

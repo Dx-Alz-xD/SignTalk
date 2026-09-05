@@ -8,9 +8,17 @@ import { ForgotPasswordScreen } from '@/components/screens/forgot-password-scree
 import { LoadingScreen } from '@/components/screens/loading-screen'
 import { HomeScreen } from '@/components/screens/home-screen'
 import { TrainerScreen } from '@/components/screens/trainer-screen'
+import { CommunityDatabaseScreen } from '@/components/screens/community-database-screen'
 import { fetchAccount, signOut, type Account } from '@/lib/auth'
 
-type Screen = 'loading' | 'login' | 'signup' | 'forgot' | 'home' | 'trainer'
+type Screen =
+  | 'loading'
+  | 'login'
+  | 'signup'
+  | 'forgot'
+  | 'home'
+  | 'trainer'
+  | 'community'
 
 export function SignTalkApp() {
   // Starts on the splash: the session cookie survives a refresh, so we ask the
@@ -120,11 +128,18 @@ export function SignTalkApp() {
           <HomeScreen
             account={account}
             onSignOut={handleSignOut}
-            onOpenTrainer={() => setScreen('trainer')}
+            onOpen={(id) => {
+              // Translator and Direct Paste have no screen yet; the home cards
+              // render those as inert, so nothing routes here for them.
+              if (id === 'trainer') setScreen('trainer')
+              if (id === 'community') setScreen('community')
+            }}
           />
         )}
 
         {screen === 'trainer' && <TrainerScreen onBack={() => setScreen('home')} />}
+
+        {screen === 'community' && <CommunityDatabaseScreen onBack={() => setScreen('home')} />}
       </div>
     </AppWindow>
   )
