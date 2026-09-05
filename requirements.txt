@@ -1,0 +1,7 @@
+# Argon2id password hashing.
+argon2-cffi>=23.1.0
+
+# CA bundle for outbound TLS. macOS python.org builds do not trust the system
+# keychain, so without this every real SMTP/Twilio/Textbelt call dies with
+# CERTIFICATE_VERIFY_FAILED.
+certifi>=2024.2.2
