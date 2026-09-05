@@ -14,6 +14,7 @@ import { cn } from '@/lib/utils'
 import type { SignUpDetails } from '@/components/screens/signup-screen'
 
 type Action = {
+  id: 'translator' | 'trainer' | 'direct-paste' | 'community'
   title: string
   description: string
   icon: LucideIcon
@@ -23,6 +24,7 @@ type Action = {
 }
 
 const featured: Action = {
+  id: 'translator',
   title: 'Translator',
   description:
     'Live sign-to-text transcription, with optional translation to other spoken or signed languages.',
@@ -32,12 +34,14 @@ const featured: Action = {
 
 const actions: Action[] = [
   {
+    id: 'trainer',
     title: 'Trainer',
     description: 'Record a new letter, word, or phrase and add it to your vocabulary.',
     icon: GraduationCap,
     meta: 'Any sign language',
   },
   {
+    id: 'direct-paste',
     title: 'Direct Paste',
     description:
       'Transcribe in the background, typing into whatever text field has focus.',
@@ -45,11 +49,11 @@ const actions: Action[] = [
     meta: 'Background mode',
   },
   {
+    id: 'community',
     title: 'Community Database',
     description: 'Share your trained signs, or download sets contributed by others.',
     icon: Database,
-    meta: 'Not connected',
-    pending: true,
+    meta: 'Community',
   },
 ]
 
@@ -62,7 +66,13 @@ function initials(account: SignUpDetails | null) {
   return letters.toUpperCase()
 }
 
-export function HomeScreen({ account = null }: { account?: SignUpDetails | null }) {
+export function HomeScreen({
+  account = null,
+  onOpen,
+}: {
+  account?: SignUpDetails | null
+  onOpen: (id: Action['id']) => void
+}) {
   return (
     <div className="flex flex-1 flex-col">
       <header className="flex shrink-0 items-center justify-between gap-4 border-b px-5 py-3.5 sm:px-8">
@@ -94,10 +104,10 @@ export function HomeScreen({ account = null }: { account?: SignUpDetails | null 
         </div>
 
         <div className="flex flex-col gap-4">
-          <FeaturedCard action={featured} />
+          <FeaturedCard action={featured} onOpen={onOpen} />
           <div className="grid gap-4 sm:grid-cols-3">
             {actions.map((action) => (
-              <ActionCard key={action.title} action={action} />
+              <ActionCard key={action.id} action={action} onOpen={onOpen} />
             ))}
           </div>
         </div>
@@ -115,10 +125,14 @@ const cardBase = cn(
 )
 
 /** The one thing most people open the app to do, so it gets the most weight. */
-function FeaturedCard({ action }: { action: Action }) {
+function FeaturedCard({ action, onOpen }: { action: Action; onOpen: (id: Action['id']) => void }) {
   const { title, description, icon: Icon, meta } = action
   return (
-    <button type="button" className={cn(cardBase, 'p-5 sm:p-6 hover:border-primary/45')}>
+    <button
+      type="button"
+      onClick={() => onOpen(action.id)}
+      className={cn(cardBase, 'p-5 sm:p-6 hover:border-primary/45')}
+    >
       <span
         aria-hidden="true"
         className="pointer-events-none absolute -right-16 -top-20 size-52 rounded-full bg-primary opacity-[0.09] blur-3xl transition-opacity duration-300 group-hover:opacity-[0.16]"
@@ -145,11 +159,12 @@ function FeaturedCard({ action }: { action: Action }) {
   )
 }
 
-function ActionCard({ action }: { action: Action }) {
+function ActionCard({ action, onOpen }: { action: Action; onOpen: (id: Action['id']) => void }) {
   const { title, description, icon: Icon, meta, pending } = action
   return (
     <button
       type="button"
+      onClick={() => onOpen(action.id)}
       className={cn(cardBase, 'flex min-h-40 flex-col gap-3.5 p-5 hover:border-primary/45')}
     >
       <span className="flex items-center justify-between">
