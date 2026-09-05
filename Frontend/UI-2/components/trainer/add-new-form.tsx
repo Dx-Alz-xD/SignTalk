@@ -1,167 +1,110 @@
-"use client"
+'use client'
 
-import type React from "react"
+import type React from 'react'
 
-import { useRouter } from "next/navigation"
-import { useState } from "react"
-import { ArrowRight, Info, Languages, MessageSquareText, Type } from "lucide-react"
+import { useRouter } from 'next/navigation'
+import { useState } from 'react'
+import { ArrowRight } from 'lucide-react'
+import { cn } from '@/lib/utils'
 
-const languageSuggestions = [
-  "ASL — American Sign Language",
-  "BSL — British Sign Language",
-  "ISL — Indian Sign Language",
-  "Auslan — Australian Sign Language",
-  "LSF — French Sign Language",
-  "JSL — Japanese Sign Language",
-]
-
-const phraseOptions = [
-  { value: true, label: "Yes", hint: "Record multi-sign phrases as well as single signs" },
-  { value: false, label: "No", hint: "Keep every entry to a single sign" },
-]
+const inputBaseClass = cn(
+  'h-11 w-full rounded-lg border border-input bg-elevated px-3.5 text-sm text-foreground',
+  'shadow-[inset_0_1px_0_oklch(1_0_0/4%)] transition-[color,box-shadow,border-color,background-color] duration-150',
+  'placeholder:text-muted-foreground/70',
+  'hover:border-border-strong',
+  'focus-visible:border-ring focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/35',
+)
 
 export function AddNewForm() {
   const router = useRouter()
-  const [name, setName] = useState("")
-  const [language, setLanguage] = useState("")
+  const [name, setName] = useState('')
+  const [language, setLanguage] = useState('')
   const [phrasesIncluded, setPhrasesIncluded] = useState(true)
-
-  const canSubmit = name.trim().length > 0
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!canSubmit) return
     const params = new URLSearchParams({
-      name: name.trim(),
-      language: language.trim(),
-      phrases: phrasesIncluded ? "yes" : "no",
+      name,
+      language,
+      phrases: phrasesIncluded ? 'yes' : 'no',
     })
     router.push(`/add-new/configure?${params.toString()}`)
   }
 
-  const fieldClass =
-    "w-full rounded-lg border border-input bg-background py-3 pl-11 pr-4 text-base outline-none transition-all placeholder:text-muted-foreground/60 focus:border-primary focus:ring-4 focus:ring-primary/15"
-
   return (
     <form
       onSubmit={handleSubmit}
-      className="relative w-full max-w-xl overflow-hidden rounded-2xl border border-border bg-card shadow-sm"
+      className="flex w-full max-w-xl flex-col gap-6 rounded-xl border bg-elevated p-5 sm:p-6"
     >
-      <span aria-hidden="true" className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-primary via-ember to-iris" />
-
-      <div className="flex flex-col gap-7 p-7 md:p-8">
-        <div className="flex flex-col gap-1.5">
-          <h2 className="font-display text-lg font-semibold tracking-tight">Vocabulary details</h2>
-          <p className="text-sm leading-relaxed text-muted-foreground">
-            Just the basics before you start recording. Everything here can be changed later.
-          </p>
-        </div>
-
-        <div className="flex flex-col gap-2">
-          <label htmlFor="name" className="text-sm font-medium text-foreground">
-            Name
-          </label>
-          <div className="relative">
-            <Type
-              aria-hidden="true"
-              className="pointer-events-none absolute left-4 top-1/2 size-4.5 -translate-y-1/2 text-muted-foreground"
-            />
-            <input
-              id="name"
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Kitchen basics"
-              autoComplete="off"
-              aria-describedby="name-hint"
-              className={fieldClass}
-            />
-          </div>
-          <p id="name-hint" className="text-xs text-muted-foreground">
-            What you will call this set of signs — a room, a topic, or a class.
-          </p>
-        </div>
-
-        <div className="flex flex-col gap-2">
-          <label htmlFor="language" className="text-sm font-medium text-foreground">
-            Language
-            <span className="ml-2 font-normal text-muted-foreground">optional</span>
-          </label>
-          <div className="relative">
-            <Languages
-              aria-hidden="true"
-              className="pointer-events-none absolute left-4 top-1/2 size-4.5 -translate-y-1/2 text-muted-foreground"
-            />
-            <input
-              id="language"
-              type="text"
-              value={language}
-              onChange={(e) => setLanguage(e.target.value)}
-              placeholder="ISL — Indian Sign Language"
-              list="language-suggestions"
-              autoComplete="off"
-              aria-describedby="language-hint"
-              className={fieldClass}
-            />
-            <datalist id="language-suggestions">
-              {languageSuggestions.map((l) => (
-                <option key={l} value={l} />
-              ))}
-            </datalist>
-          </div>
-          <p id="language-hint" className="text-xs text-muted-foreground">
-            Which sign language these gestures belong to. Start typing for suggestions.
-          </p>
-        </div>
-
-        <fieldset className="flex flex-col gap-3">
-          <legend className="mb-3 flex items-center gap-2 text-sm font-medium text-foreground">
-            <MessageSquareText className="size-4 text-muted-foreground" />
-            Phrases included?
-          </legend>
-          <div className="grid gap-3 sm:grid-cols-2">
-            {phraseOptions.map((option) => {
-              const selected = phrasesIncluded === option.value
-              return (
-                <button
-                  key={option.label}
-                  type="button"
-                  onClick={() => setPhrasesIncluded(option.value)}
-                  aria-pressed={selected}
-                  className={`flex flex-col items-start gap-1 rounded-lg border px-4 py-3 text-left transition-all ${
-                    selected
-                      ? "border-primary bg-primary/8 ring-2 ring-primary/25"
-                      : "border-input bg-background hover:border-primary/40 hover:bg-accent/40"
-                  }`}
-                >
-                  <span
-                    className={`text-base font-semibold ${selected ? "text-primary" : "text-foreground"}`}
-                  >
-                    {option.label}
-                  </span>
-                  <span className="text-xs leading-snug text-muted-foreground">{option.hint}</span>
-                </button>
-              )
-            })}
-          </div>
-        </fieldset>
-
-        <div className="flex items-start gap-2.5 rounded-lg border border-ember/25 bg-ember/8 p-3.5">
-          <Info className="mt-0.5 size-4 shrink-0 text-ember" />
-          <p className="text-xs leading-relaxed text-muted-foreground">
-            Aim for at least a few samples per sign, recorded in the lighting you will actually use. Variety beats volume.
-          </p>
-        </div>
-
-        <button
-          type="submit"
-          disabled={!canSubmit}
-          className="group mt-1 inline-flex items-center justify-center gap-2 self-start rounded-lg bg-gradient-to-r from-primary to-[oklch(0.5_0.2_12)] px-7 py-3 text-base font-semibold text-primary-foreground shadow-sm transition-all hover:shadow-[0_10px_30px_-12px_oklch(0.5_0.2_22_/_0.8)] disabled:cursor-not-allowed disabled:opacity-45 disabled:shadow-none"
-        >
-          Next
-          <ArrowRight className="size-4.5 transition-transform group-hover:translate-x-0.5 group-disabled:translate-x-0" />
-        </button>
+      <div className="flex flex-col gap-2">
+        <label htmlFor="name" className="text-sm font-medium text-foreground">
+          Name
+        </label>
+        <input
+          id="name"
+          type="text"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Everyday greetings"
+          className={inputBaseClass}
+        />
       </div>
+
+      <div className="flex flex-col gap-2">
+        <label htmlFor="language" className="text-sm font-medium text-foreground">
+          Language
+        </label>
+        <input
+          id="language"
+          type="text"
+          value={language}
+          onChange={(e) => setLanguage(e.target.value)}
+          placeholder="ASL, ISL, BSL…"
+          className={inputBaseClass}
+        />
+      </div>
+
+      <div className="flex flex-col gap-2.5">
+        <span className="text-sm font-medium text-foreground">Phrases included?</span>
+        <div className="grid grid-cols-2 gap-2.5">
+          {[true, false].map((value) => {
+            const active = phrasesIncluded === value
+            return (
+              <button
+                key={String(value)}
+                type="button"
+                onClick={() => setPhrasesIncluded(value)}
+                aria-pressed={active}
+                className={cn(
+                  'h-11 rounded-lg border text-sm font-medium transition-all duration-150',
+                  'focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/35',
+                  active
+                    ? 'border-primary/45 bg-primary/10 text-primary'
+                    : 'border-input bg-elevated text-muted-foreground hover:border-border-strong hover:text-foreground',
+                )}
+              >
+                {value ? 'Yes' : 'No'}
+              </button>
+            )
+          })}
+        </div>
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          Phrase vocabularies record whole expressions, not just single letters or words.
+        </p>
+      </div>
+
+      <button
+        type="submit"
+        className={cn(
+          'group inline-flex h-11 items-center justify-center gap-2 self-start rounded-lg px-5',
+          'bg-primary text-sm font-medium text-primary-foreground shadow-raised',
+          'transition-all hover:bg-primary/90 active:translate-y-px',
+          'focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/35',
+        )}
+      >
+        Continue
+        <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
+      </button>
     </form>
   )
 }
