@@ -7,8 +7,9 @@ import { SignUpScreen, type SignUpDetails } from '@/components/screens/signup-sc
 import { ForgotPasswordScreen } from '@/components/screens/forgot-password-screen'
 import { LoadingScreen } from '@/components/screens/loading-screen'
 import { HomeScreen } from '@/components/screens/home-screen'
+import { CommunityDatabaseScreen } from '@/components/screens/community-database-screen'
 
-type Screen = 'login' | 'signup' | 'forgot' | 'loading' | 'home'
+type Screen = 'login' | 'signup' | 'forgot' | 'loading' | 'home' | 'community'
 
 export function SignTalkApp() {
   const [screen, setScreen] = useState<Screen>('login')
@@ -42,7 +43,16 @@ export function SignTalkApp() {
           />
         )}
         {screen === 'loading' && <LoadingScreen onDone={() => setScreen('home')} />}
-        {screen === 'home' && <HomeScreen account={account} />}
+        {screen === 'home' && (
+          <HomeScreen
+            account={account}
+            onOpen={(id) => {
+              // Only the community database exists so far; the rest are inert.
+              if (id === 'community') setScreen('community')
+            }}
+          />
+        )}
+        {screen === 'community' && <CommunityDatabaseScreen onBack={() => setScreen('home')} />}
       </div>
     </AppWindow>
   )
