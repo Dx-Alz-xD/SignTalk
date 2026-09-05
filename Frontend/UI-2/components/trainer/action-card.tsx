@@ -1,192 +1,115 @@
-import type { LucideIcon } from "lucide-react"
-import Link from "next/link"
-import { ArrowRight, ArrowUpRight } from "lucide-react"
+import type { ReactNode } from 'react'
+import type { LucideIcon } from 'lucide-react'
+import Link from 'next/link'
+import { ArrowUpRight } from 'lucide-react'
+import { cn } from '@/lib/utils'
 
-export type CardAccent = "crimson" | "jade" | "iris"
-/* featured = the primary path (filled CTA), standard = a normal card, ghost = a quieter, dashed one. */
-export type CardVariant = "featured" | "standard" | "ghost"
-
-interface ActionCardProps {
-  icon: LucideIcon
+export type Action = {
   title: string
   description: string
+  icon: LucideIcon
   meta: string
-  cta: string
-  accent: CardAccent
-  variant: CardVariant
+  /** Muted chip for things that aren't wired up yet. */
+  pending?: boolean
   href?: string
 }
 
-/* Tailwind needs whole class names at build time, so each accent is spelled out. */
-const accents: Record<CardAccent, { solid: string; tint: string; glow: string; hover: string; arrow: string }> = {
-  crimson: {
-    solid: "bg-primary text-primary-foreground",
-    tint: "bg-primary/10 text-primary ring-primary/20",
-    glow: "bg-primary/25",
-    hover:
-      "hover:border-primary/50 hover:shadow-[0_18px_40px_-20px_oklch(0.5_0.2_22_/_0.7)] focus-visible:ring-primary",
-    arrow: "group-hover:border-primary group-hover:bg-primary group-hover:text-primary-foreground",
-  },
-  jade: {
-    solid: "bg-jade text-jade-foreground",
-    tint: "bg-jade/10 text-jade ring-jade/20",
-    glow: "bg-jade/25",
-    hover: "hover:border-jade/50 hover:shadow-[0_18px_40px_-20px_oklch(0.55_0.12_165_/_0.7)] focus-visible:ring-jade",
-    arrow: "group-hover:border-jade group-hover:bg-jade group-hover:text-jade-foreground",
-  },
-  iris: {
-    solid: "bg-iris text-iris-foreground",
-    tint: "bg-iris/10 text-iris ring-iris/20",
-    glow: "bg-iris/25",
-    hover: "hover:border-iris/50 hover:shadow-[0_18px_40px_-20px_oklch(0.53_0.19_292_/_0.7)] focus-visible:ring-iris",
-    arrow: "group-hover:border-iris group-hover:bg-iris group-hover:text-iris-foreground",
-  },
-}
+const cardBase = cn(
+  'group relative overflow-hidden rounded-xl border border-border bg-elevated text-left',
+  'transition-[border-color,box-shadow,transform] duration-200',
+  'hover:-translate-y-0.5 hover:border-border-strong hover:shadow-raised hover:border-primary/45',
+  'active:translate-y-0 active:shadow-none',
+  'focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/35',
+)
 
-const shells: Record<CardVariant, string> = {
-  featured: "border-primary/35 bg-card shadow-[0_12px_32px_-26px_oklch(0.5_0.2_22_/_0.9)]",
-  standard: "border-border bg-card",
-  ghost: "border-dashed border-border bg-muted/40",
-}
-
-function Heading({ title, description }: { title: string; description: string }) {
-  return (
-    <div className="flex flex-1 flex-col gap-2">
-      <h2 className="font-display text-xl font-semibold tracking-tight text-card-foreground">{title}</h2>
-      <p className="text-pretty text-sm leading-relaxed text-muted-foreground">{description}</p>
-    </div>
-  )
-}
-
-function CardBody({ icon: Icon, title, description, meta, cta, accent, variant }: Omit<ActionCardProps, "href">) {
-  const a = accents[accent]
-
-  const glow = (
-    <span
-      aria-hidden="true"
-      className={`pointer-events-none absolute -right-12 -top-12 size-32 rounded-full opacity-0 blur-2xl transition-opacity duration-500 group-hover:opacity-100 ${a.glow}`}
-    />
-  )
-
-  if (variant === "featured") {
-    return (
-      <>
-        <span
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-0 bg-[linear-gradient(160deg,oklch(0.52_0.22_22_/_0.09),transparent_58%)]"
-        />
-        {glow}
-
-        <div className="relative flex w-full items-start justify-between gap-4">
-          <span className={`flex size-14 items-center justify-center rounded-2xl shadow-sm ${a.solid}`}>
-            <Icon className="size-6" />
-          </span>
-          <span
-            className={`rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider shadow-sm ${a.solid}`}
-          >
-            {meta}
-          </span>
-        </div>
-
-        <div className="relative flex flex-1 flex-col">
-          <Heading title={title} description={description} />
-        </div>
-
-        <span
-          className={`relative flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold shadow-sm transition-opacity group-hover:opacity-90 ${a.solid}`}
-        >
-          {cta}
-          <ArrowRight className="size-4 transition-transform duration-300 group-hover:translate-x-0.5" />
-        </span>
-      </>
-    )
-  }
-
-  if (variant === "ghost") {
-    return (
-      <>
-        {glow}
-
-        <div className="relative flex w-full items-center gap-3">
-          <span className={`flex size-11 items-center justify-center rounded-xl ring-1 ring-inset ${a.tint}`}>
-            <Icon className="size-5" />
-          </span>
-          <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">{meta}</span>
-        </div>
-
-        <div className="relative flex flex-1 flex-col">
-          <Heading title={title} description={description} />
-        </div>
-
-        <span className="relative flex w-full items-center gap-1.5 border-t border-dashed border-border pt-4 text-xs font-medium text-muted-foreground transition-colors group-hover:text-foreground">
-          {cta}
-          <ArrowUpRight className="size-3.5 transition-transform duration-300 group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
-        </span>
-      </>
-    )
-  }
-
-  return (
-    <>
-      {glow}
-
-      <div className="relative flex w-full items-start justify-between gap-4">
-        <span
-          className={`flex size-14 items-center justify-center rounded-full ring-1 ring-inset transition-colors duration-300 ${a.tint}`}
-        >
-          <Icon className="size-6" />
-        </span>
-        <span
-          className={`rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider ring-1 ring-inset ${a.tint}`}
-        >
-          {meta}
-        </span>
-      </div>
-
-      <div className="relative flex flex-1 flex-col">
-        <Heading title={title} description={description} />
-      </div>
-
-      <div className="relative flex w-full items-center justify-between border-t border-border pt-4">
-        <span className="text-xs font-medium text-muted-foreground transition-colors group-hover:text-foreground">
-          {cta}
-        </span>
-        <span
-          className={`flex size-9 items-center justify-center rounded-full border border-border text-muted-foreground transition-all duration-300 ${a.arrow}`}
-        >
-          <ArrowUpRight className="size-4.5 transition-transform duration-300 group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
-        </span>
-      </div>
-    </>
-  )
-}
-
-export function ActionCard({ icon, title, description, meta, cta, accent, variant, href }: ActionCardProps) {
-  const cardClass = `group relative flex h-full flex-col items-start gap-5 overflow-hidden rounded-2xl border p-6 text-left transition-all duration-300 hover:-translate-y-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-background ${shells[variant]} ${accents[accent].hover}`
-
-  const body = (
-    <CardBody
-      icon={icon}
-      title={title}
-      description={description}
-      meta={meta}
-      cta={cta}
-      accent={accent}
-      variant={variant}
-    />
-  )
-
+/** Renders as a link when the destination exists, and a button while it doesn't. */
+function Shell({
+  href,
+  className,
+  children,
+}: {
+  href?: string
+  className: string
+  children: ReactNode
+}) {
   if (href) {
     return (
-      <Link href={href} className={cardClass}>
-        {body}
+      <Link href={href} className={className}>
+        {children}
       </Link>
     )
   }
+  return (
+    <button type="button" className={className}>
+      {children}
+    </button>
+  )
+}
+
+/** The one thing most people open the trainer to do, so it gets the most weight. */
+export function FeaturedCard({ action }: { action: Action }) {
+  const { title, description, icon: Icon, meta, href } = action
 
   return (
-    <button type="button" className={cardClass}>
-      {body}
-    </button>
+    <Shell href={href} className={cn(cardBase, 'block p-5 sm:p-6')}>
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute -right-16 -top-20 size-52 rounded-full bg-primary opacity-[0.09] blur-3xl transition-opacity duration-300 group-hover:opacity-[0.16]"
+      />
+      <span className="relative flex items-start gap-5">
+        <span className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-raised">
+          <Icon className="size-6" aria-hidden="true" />
+        </span>
+        <span className="flex min-w-0 flex-col gap-1.5">
+          <span className="flex items-center gap-2">
+            <span className="text-lg font-semibold tracking-tight">{title}</span>
+            <Chip>{meta}</Chip>
+          </span>
+          <span className="max-w-xl text-sm leading-relaxed text-muted-foreground">{description}</span>
+        </span>
+        <ArrowUpRight
+          className="ml-auto hidden size-5 shrink-0 text-muted-foreground transition-all group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-foreground sm:block"
+          aria-hidden="true"
+        />
+      </span>
+    </Shell>
+  )
+}
+
+export function ActionCard({ action }: { action: Action }) {
+  const { title, description, icon: Icon, meta, pending, href } = action
+
+  return (
+    <Shell href={href} className={cn(cardBase, 'flex min-h-40 flex-col gap-3.5 p-5')}>
+      <span className="flex items-center justify-between">
+        <span className="flex size-10 items-center justify-center rounded-lg bg-primary/12 text-primary ring-1 ring-inset ring-primary/20 transition-colors group-hover:bg-primary group-hover:text-primary-foreground group-hover:ring-primary">
+          <Icon className="size-5" aria-hidden="true" />
+        </span>
+        <ArrowUpRight
+          className="size-4 text-muted-foreground opacity-0 transition-all group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:opacity-100"
+          aria-hidden="true"
+        />
+      </span>
+      <span className="flex flex-1 flex-col gap-1.5">
+        <span className="font-semibold tracking-tight">{title}</span>
+        <span className="text-[0.8125rem] leading-relaxed text-muted-foreground">{description}</span>
+      </span>
+      <Chip muted={pending}>{meta}</Chip>
+    </Shell>
+  )
+}
+
+export function Chip({ children, muted = false }: { children: ReactNode; muted?: boolean }) {
+  return (
+    <span
+      className={cn(
+        'w-fit rounded-full border px-2 py-0.5 font-mono text-[0.625rem] uppercase tracking-wider',
+        muted
+          ? 'border-border bg-muted/60 text-muted-foreground'
+          : 'border-primary/25 bg-primary/10 text-primary',
+      )}
+    >
+      {children}
+    </span>
   )
 }
