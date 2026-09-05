@@ -12,8 +12,9 @@ pnpm install
 pnpm dev
 ```
 
-Serves on **http://localhost:3001**. The port is pinned in `package.json` so
-this can run alongside `Frontend/UX`, which owns 3000.
+Serves on **http://localhost:3000**, pinned in `package.json`.
+
+`Frontend/UX` is pinned to 3001, so both apps can run at the same time.
 
 ## What it does
 
