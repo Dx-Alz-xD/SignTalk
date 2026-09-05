@@ -1,15 +1,15 @@
 'use client'
 
 import { useId, useMemo, useState, type FormEvent } from 'react'
-import { useRouter } from 'next/navigation'
 import { ChevronDown, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input, Select } from '@/components/ui/input'
 import { TextField, PasswordField, FieldShell } from '@/components/ui/field'
 import { AuthLayout, AuthHeading, BackButton, LegalNote } from '@/components/auth-layout'
-import { Breadcrumbs } from '@/components/breadcrumbs'
-import { saveAccount, type AccountDetails } from '@/lib/account-session'
+import { FormAlert } from '@/components/form-alert'
 import { countryCodes } from '@/lib/country-codes'
+import { errorMessage } from '@/lib/api'
+import { signUp, type Account } from '@/lib/auth'
 import {
   validateEmail,
   validatePassword,
@@ -17,13 +17,21 @@ import {
   validateUsername,
 } from '@/lib/validation'
 
-/** Kept as an alias so existing imports of this name keep working. */
-export type SignUpDetails = AccountDetails
-
 type Errors = Partial<Record<'username' | 'email' | 'phone' | 'password' | 'confirm', string>>
 
-export function SignUpScreen({ crumbs }: { crumbs: { name: string; href: string }[] }) {
-  const router = useRouter()
+/** E.164 for the backend: a leading +, then digits only. */
+function e164(dial: string, phone: string): string {
+  return `+${`${dial}${phone}`.replace(/\D/g, '')}`
+}
+
+export function SignUpScreen({
+  onBack,
+  onSignedIn,
+}: {
+  onBack: () => void
+  /** Signing up signs you in, so this hands back a live session. */
+  onSignedIn: (account: Account) => void
+}) {
   const phoneId = useId()
   const [username, setUsername] = useState('')
   const [email, setEmail] = useState('')
@@ -32,6 +40,7 @@ export function SignUpScreen({ crumbs }: { crumbs: { name: string; href: string 
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
   const [errors, setErrors] = useState<Errors>({})
+  const [failure, setFailure] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
   // Mismatch is shown live because it is unambiguous; everything else waits
@@ -51,9 +60,10 @@ export function SignUpScreen({ crumbs }: { crumbs: { name: string; href: string 
 
   function clear(field: keyof Errors) {
     setErrors((prev) => (prev[field] ? { ...prev, [field]: undefined } : prev))
+    setFailure(null)
   }
 
-  function handleSubmit(event: FormEvent) {
+  async function handleSubmit(event: FormEvent) {
     event.preventDefault()
     const next: Errors = {
       username: validateUsername(username) ?? undefined,
@@ -69,17 +79,29 @@ export function SignUpScreen({ crumbs }: { crumbs: { name: string; href: string 
     }
 
     setErrors({})
+    setFailure(null)
     setSubmitting(true)
-    // Carried across the route change so /app can greet you by name.
-    saveAccount({ username: username.trim(), email: email.trim(), dial, phone })
-    router.push('/app')
+
+    try {
+      onSignedIn(
+        await signUp({
+          username: username.trim(),
+          email: email.trim(),
+          password,
+          phone: e164(dial, phone),
+        }),
+      )
+    } catch (error) {
+      // A taken email or username is the common case, and the field it belongs
+      // to is not knowable from the response — show it above the form.
+      setFailure(errorMessage(error))
+      setSubmitting(false)
+    }
   }
 
   return (
     <AuthLayout>
-      <Breadcrumbs crumbs={crumbs} />
-
-      <BackButton href="/">Back to log in</BackButton>
+      <BackButton onClick={onBack}>Back to log in</BackButton>
 
       <AuthHeading
         title="Create your account"
@@ -87,6 +109,8 @@ export function SignUpScreen({ crumbs }: { crumbs: { name: string; href: string 
       />
 
       <form className="flex flex-col gap-5" onSubmit={handleSubmit} noValidate>
+        {failure && <FormAlert>{failure}</FormAlert>}
+
         <TextField
           label="Username"
           autoComplete="username"

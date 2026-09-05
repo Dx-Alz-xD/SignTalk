@@ -15,7 +15,14 @@ const steps = [
 
 const STEP_DURATION_MS = 550
 
-export function LoadingScreen({ onDone }: { onDone: () => void }) {
+export function LoadingScreen({
+  onDone,
+  /** False while the session handshake is still in flight. */
+  ready = true,
+}: {
+  onDone: () => void
+  ready?: boolean
+}) {
   const [completed, setCompleted] = useState(0)
 
   useEffect(() => {
@@ -23,9 +30,12 @@ export function LoadingScreen({ onDone }: { onDone: () => void }) {
       const timeout = setTimeout(onDone, 400)
       return () => clearTimeout(timeout)
     }
+    // Hold on the last step until the server has actually answered, so the bar
+    // never reaches 100% before there is somewhere to go.
+    if (completed === steps.length - 1 && !ready) return
     const timeout = setTimeout(() => setCompleted((count) => count + 1), STEP_DURATION_MS)
     return () => clearTimeout(timeout)
-  }, [completed, onDone])
+  }, [completed, ready, onDone])
 
   const progress = Math.round((completed / steps.length) * 100)
   const current = steps[Math.min(completed, steps.length - 1)]
