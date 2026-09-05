@@ -1,22 +1,17 @@
 'use client'
 
 import { useState, type FormEvent } from 'react'
+import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { Loader2 } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { Button, buttonVariants } from '@/components/ui/button'
 import { TextField, PasswordField } from '@/components/ui/field'
 import { Checkbox } from '@/components/ui/checkbox'
 import { AuthLayout, AuthHeading, LegalNote } from '@/components/auth-layout'
 import { validateEmail } from '@/lib/validation'
 
-export function LoginScreen({
-  onContinue,
-  onSignUp,
-  onForgotPassword,
-}: {
-  onContinue: () => void
-  onSignUp: () => void
-  onForgotPassword: () => void
-}) {
+export function LoginScreen() {
+  const router = useRouter()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [remember, setRemember] = useState(true)
@@ -35,7 +30,7 @@ export function LoginScreen({
 
     setErrors({})
     setSubmitting(true)
-    onContinue()
+    router.push('/app')
   }
 
   return (
@@ -71,13 +66,13 @@ export function LoginScreen({
             if (errors.password) setErrors((prev) => ({ ...prev, password: undefined }))
           }}
           action={
-            <button
-              type="button"
-              onClick={onForgotPassword}
+            // A real link, so the route is crawlable and openable in a new tab.
+            <Link
+              href="/forgot-password"
               className="rounded-sm text-xs font-medium text-primary underline-offset-4 transition-colors hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               Forgot password?
-            </button>
+            </Link>
           }
         />
 
@@ -110,15 +105,12 @@ export function LoginScreen({
             />
           </div>
 
-          <Button
-            type="button"
-            variant="outline"
-            size="xl"
-            className="w-full"
-            onClick={onSignUp}
+          <Link
+            href="/signup"
+            className={buttonVariants({ variant: 'outline', size: 'xl', className: 'w-full' })}
           >
             Create an account
-          </Button>
+          </Link>
         </div>
       </form>
 

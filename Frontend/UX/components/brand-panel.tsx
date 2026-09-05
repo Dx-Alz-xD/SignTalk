@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { SignTalkLockup } from '@/components/signtalk-mark'
 import { HandGraph } from '@/components/hand-graph'
 
@@ -28,11 +29,17 @@ export function BrandPanel() {
 
       <div className="relative flex items-center justify-between">
         {/* The panel is always dark, so the lockup takes explicit colours. */}
-        <SignTalkLockup
-          markClassName="size-7 text-[oklch(0.7_0.21_23)]"
-          wordmarkClassName="text-sm text-[oklch(0.97_0.008_30)]"
-          accentClassName="text-[oklch(0.7_0.21_23)]"
-        />
+        <Link
+          href="/"
+          aria-label="SignTalk home"
+          className="rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+        >
+          <SignTalkLockup
+            markClassName="size-7 text-[oklch(0.7_0.21_23)]"
+            wordmarkClassName="text-sm text-[oklch(0.97_0.008_30)]"
+            accentClassName="text-[oklch(0.7_0.21_23)]"
+          />
+        </Link>
         <span className="rounded-full border border-white/15 bg-white/5 px-2.5 py-1 font-mono text-[0.625rem] uppercase tracking-[0.14em] text-white/70">
           Preview
         </span>
@@ -60,9 +67,9 @@ export function BrandPanel() {
         </div>
 
         <div>
-          <h1 className="text-balance text-[2rem] font-semibold leading-[1.1] tracking-tight">
+          <p className="text-balance text-[2rem] font-semibold leading-[1.1] tracking-tight">
             Sign language that speaks your signs.
-          </h1>
+          </p>
           <p className="mt-3 max-w-sm text-pretty text-sm leading-relaxed text-white/65">
             Train, translate, and type with any sign language, live from your camera.
           </p>

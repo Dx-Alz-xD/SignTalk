@@ -1,6 +1,8 @@
 import { Analytics } from '@vercel/analytics/next'
 import type { Metadata, Viewport } from 'next'
 import { Geist, Geist_Mono } from 'next/font/google'
+import { JsonLd } from '@/components/structured-data'
+import { SITE_DESCRIPTION, SITE_NAME, SITE_URL, absoluteUrl } from '@/lib/site'
 import { THEME_STORAGE_KEY } from '@/lib/theme-storage'
 import './globals.css'
 
@@ -19,26 +21,61 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
-  title: 'SignTalk',
-  description:
-    'SignTalk interprets sign language in real time and lets you train any sign language.',
-  generator: 'v0.app',
+  // Makes every relative canonical / Open Graph URL below resolve absolutely.
+  metadataBase: new URL(SITE_URL),
+  title: {
+    default: `${SITE_NAME} — Real-time sign language interpretation`,
+    // Each page supplies its own short title; this keeps the brand on the end.
+    template: `%s — ${SITE_NAME}`,
+  },
+  description: SITE_DESCRIPTION,
+  applicationName: SITE_NAME,
+  keywords: [
+    'sign language',
+    'ASL',
+    'sign language translator',
+    'sign language recognition',
+    'accessibility',
+    'real-time interpretation',
+    'deaf communication',
+  ],
+  authors: [{ name: SITE_NAME }],
+  creator: SITE_NAME,
+  publisher: SITE_NAME,
+  openGraph: {
+    type: 'website',
+    siteName: SITE_NAME,
+    title: `${SITE_NAME} — Real-time sign language interpretation`,
+    description: SITE_DESCRIPTION,
+    url: absoluteUrl('/'),
+    locale: 'en_US',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: `${SITE_NAME} — Real-time sign language interpretation`,
+    description: SITE_DESCRIPTION,
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      'max-image-preview': 'large',
+      'max-snippet': -1,
+      'max-video-preview': -1,
+    },
+  },
   icons: {
     icon: [
-      {
-        url: '/icon-light-32x32.png',
-        media: '(prefers-color-scheme: light)',
-      },
-      {
-        url: '/icon-dark-32x32.png',
-        media: '(prefers-color-scheme: dark)',
-      },
-      {
-        url: '/icon.svg',
-        type: 'image/svg+xml',
-      },
+      { url: '/icon.svg', type: 'image/svg+xml' },
+      { url: '/icon-light-32x32.png', media: '(prefers-color-scheme: light)' },
+      { url: '/icon-dark-32x32.png', media: '(prefers-color-scheme: dark)' },
     ],
     apple: '/apple-icon.png',
+  },
+  formatDetection: {
+    telephone: false,
   },
 }
 
@@ -67,6 +104,51 @@ const themeBootstrap = `
 })();
 `
 
+/** Site-wide graph: who publishes this, and what the product is. */
+const siteGraph = [
+  {
+    '@context': 'https://schema.org',
+    '@type': 'Organization',
+    '@id': `${SITE_URL}/#organization`,
+    name: SITE_NAME,
+    url: SITE_URL,
+    logo: absoluteUrl('/icon.svg'),
+    description: SITE_DESCRIPTION,
+  },
+  {
+    '@context': 'https://schema.org',
+    '@type': 'WebSite',
+    '@id': `${SITE_URL}/#website`,
+    name: SITE_NAME,
+    url: SITE_URL,
+    description: SITE_DESCRIPTION,
+    publisher: { '@id': `${SITE_URL}/#organization` },
+    inLanguage: 'en',
+  },
+  {
+    '@context': 'https://schema.org',
+    '@type': 'SoftwareApplication',
+    '@id': `${SITE_URL}/#app`,
+    name: SITE_NAME,
+    applicationCategory: 'CommunicationApplication',
+    operatingSystem: 'macOS, Windows, Linux, Web',
+    description: SITE_DESCRIPTION,
+    url: SITE_URL,
+    publisher: { '@id': `${SITE_URL}/#organization` },
+    featureList: [
+      'Real-time sign language interpretation from a camera',
+      'Translation between sign languages',
+      'Train and record your own signs',
+      'Direct paste into any focused text field',
+    ],
+    offers: {
+      '@type': 'Offer',
+      price: '0',
+      priceCurrency: 'USD',
+    },
+  },
+]
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -80,10 +162,16 @@ export default function RootLayout({
     >
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeBootstrap }} />
+        <JsonLd data={siteGraph} />
       </head>
       <body className="antialiased font-sans">
         {children}
-        {process.env.NODE_ENV === 'production' && <Analytics />}
+        {/* Only on a real Vercel deployment. Anywhere else the insights script
+            does not exist, so rendering this guarantees a 404 and a console
+            error - on a self-hosted build, in the Electron app and in local
+            production runs alike. */}
+        {process.env.NEXT_PUBLIC_VERCEL_ENV === 'production' &&
+          !process.env.NEXT_PUBLIC_DESKTOP && <Analytics />}
       </body>
     </html>
   )

@@ -1,11 +1,14 @@
 'use client'
 
 import { useId, useMemo, useState, type FormEvent } from 'react'
+import { useRouter } from 'next/navigation'
 import { ChevronDown, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input, Select } from '@/components/ui/input'
 import { TextField, PasswordField, FieldShell } from '@/components/ui/field'
 import { AuthLayout, AuthHeading, BackButton, LegalNote } from '@/components/auth-layout'
+import { Breadcrumbs } from '@/components/breadcrumbs'
+import { saveAccount, type AccountDetails } from '@/lib/account-session'
 import { countryCodes } from '@/lib/country-codes'
 import {
   validateEmail,
@@ -14,22 +17,13 @@ import {
   validateUsername,
 } from '@/lib/validation'
 
-export type SignUpDetails = {
-  username: string
-  email: string
-  dial: string
-  phone: string
-}
+/** Kept as an alias so existing imports of this name keep working. */
+export type SignUpDetails = AccountDetails
 
 type Errors = Partial<Record<'username' | 'email' | 'phone' | 'password' | 'confirm', string>>
 
-export function SignUpScreen({
-  onBack,
-  onCreate,
-}: {
-  onBack: () => void
-  onCreate: (details: SignUpDetails) => void
-}) {
+export function SignUpScreen({ crumbs }: { crumbs: { name: string; href: string }[] }) {
+  const router = useRouter()
   const phoneId = useId()
   const [username, setUsername] = useState('')
   const [email, setEmail] = useState('')
@@ -76,12 +70,16 @@ export function SignUpScreen({
 
     setErrors({})
     setSubmitting(true)
-    onCreate({ username: username.trim(), email: email.trim(), dial, phone })
+    // Carried across the route change so /app can greet you by name.
+    saveAccount({ username: username.trim(), email: email.trim(), dial, phone })
+    router.push('/app')
   }
 
   return (
     <AuthLayout>
-      <BackButton onClick={onBack}>Back to log in</BackButton>
+      <Breadcrumbs crumbs={crumbs} />
+
+      <BackButton href="/">Back to log in</BackButton>
 
       <AuthHeading
         title="Create your account"

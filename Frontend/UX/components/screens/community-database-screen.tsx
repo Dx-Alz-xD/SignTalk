@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import Link from 'next/link'
 import {
   ArrowLeft,
   ArrowUpDown,
@@ -43,7 +44,7 @@ const columns: { key: SortKey; label: string; width: string }[] = [
   { key: 'language', label: 'Language', width: 'w-[12%]' },
 ]
 
-export function CommunityDatabaseScreen({ onBack }: { onBack: () => void }) {
+export function CommunityDatabaseScreen() {
   const [selected, setSelected] = useState<string[]>([])
   const [filters, setFilters] = useState<Filters>(emptyFilters)
   const [filtersOpen, setFiltersOpen] = useState(false)
@@ -140,16 +141,15 @@ export function CommunityDatabaseScreen({ onBack }: { onBack: () => void }) {
     <div className="flex flex-1 flex-col overflow-hidden">
       <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b px-5 py-3.5 sm:px-8">
         <div className="flex min-w-0 items-center gap-3">
-          <button
-            type="button"
-            onClick={onBack}
-            aria-label="Back to home"
+          <Link
+            href="/app"
+            aria-label="Back to your workspace"
             className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-border text-muted-foreground transition-colors hover:border-border-strong hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <ArrowLeft className="size-4" aria-hidden="true" />
-          </button>
+          </Link>
           <div className="min-w-0">
-            <h2 className="truncate text-base font-semibold tracking-tight">Community Database</h2>
+            <h1 className="truncate text-base font-semibold tracking-tight">Community Database</h1>
             <p className="text-xs text-muted-foreground">
               {rows.length} of {communityEntries.length} sets
               {selected.length > 0 && ` · ${selected.length} selected`}

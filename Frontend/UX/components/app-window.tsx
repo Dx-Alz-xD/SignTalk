@@ -1,21 +1,18 @@
 import type { ReactNode } from 'react'
+import Link from 'next/link'
 import { SignTalkMark } from '@/components/signtalk-mark'
 import { ThemeToggle } from '@/components/theme-toggle'
 
-const titles: Record<string, string> = {
-  login: 'SignTalk — Sign in',
-  signup: 'SignTalk — Create account',
-  forgot: 'SignTalk — Reset password',
-  loading: 'SignTalk — Starting up',
-  home: 'SignTalk',
-  community: 'SignTalk — Community Database',
-}
-
+/**
+ * The drawn application window every route sits inside. The title comes from
+ * the route rather than a lookup table, so a new page cannot forget to name
+ * itself.
+ */
 export function AppWindow({
-  screen,
+  title,
   children,
 }: {
-  screen: string
+  title: string
   children: ReactNode
 }) {
   return (
@@ -39,10 +36,16 @@ export function AppWindow({
           </div>
 
           <div className="flex min-w-0 flex-1 items-center justify-center gap-2">
-            <SignTalkMark compact className="size-4 shrink-0" />
-            <span className="truncate text-xs font-medium tracking-tight text-muted-foreground">
-              {titles[screen] ?? 'SignTalk'}
-            </span>
+            <Link
+              href="/"
+              aria-label="SignTalk home"
+              className="flex min-w-0 items-center gap-2 rounded-md px-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <SignTalkMark compact className="size-4 shrink-0" />
+              <span className="truncate text-xs font-medium tracking-tight text-muted-foreground">
+                {title}
+              </span>
+            </Link>
           </div>
 
           <div className="flex w-16 shrink-0 justify-end sm:w-20">
@@ -51,7 +54,8 @@ export function AppWindow({
         </header>
 
         <div className="flex min-h-[32rem] flex-1 flex-col sm:min-h-[36rem] lg:min-h-[38rem]">
-          {children}
+          {/* Replays the enter animation on each route rather than snapping. */}
+          <div className="flex flex-1 flex-col animate-screen-in">{children}</div>
         </div>
       </div>
     </div>
