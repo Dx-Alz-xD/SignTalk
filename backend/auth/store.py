@@ -43,6 +43,26 @@ class InMemoryStore:
     def all_users(self) -> list[User]:
         return list(self._users.values())
 
+    # --- write-through hooks ------------------------------------------------
+    # No-ops here: this store hands out the live objects, so a mutation in the
+    # service is already "saved". PostgresStore implements them for real, and
+    # the service calls them after every in-place change so both stores work.
+
+    def persist_user(self, user: User) -> None:
+        pass
+
+    def persist_challenge(self, challenge: OtpChallenge) -> None:
+        pass
+
+    def persist_ticket(self, ticket: RecoveryTicket) -> None:
+        pass
+
+    def touch_session(self, token: str) -> None:
+        pass
+
+    def record_event(self, email, event, **kwargs) -> None:
+        pass
+
     # --- one-time codes -----------------------------------------------------
 
     def add_challenge(self, challenge: OtpChallenge) -> OtpChallenge:

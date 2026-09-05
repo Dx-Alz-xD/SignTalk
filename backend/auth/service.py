@@ -69,7 +69,9 @@ class AuthService:
 
     def __init__(
         self,
-        store: InMemoryStore | None = None,
+        # Any object with the store.py interface - InMemoryStore for the CLI
+        # and tests, PostgresStore for the API.
+        store=None,
         courier: Courier | None = None,
         *,
         seed_demo_account: bool = True,
@@ -170,6 +172,7 @@ class AuthService:
         if user.failed_attempts >= self.MAX_FAILED_ATTEMPTS:
             user.locked_until = utcnow() + timedelta(seconds=self.LOCKOUT_SECONDS)
             user.failed_attempts = 0
+        self.store.persist_user(user)
 
     def attempts_left(self, email_or_username: str) -> int | None:
         user = self.store.get_user_by_email(email_or_username) or self.store.get_user_by_username(
@@ -246,6 +249,9 @@ class AuthService:
             if challenge.attempts_left <= 0:
                 self.store.drop_challenge(challenge_id)
                 raise ChallengeError("Too many wrong codes. Request a new one.")
+            # Must be written before we return, or a persistent store would
+            # hand out a fresh 3 attempts on the next guess.
+            self.store.persist_challenge(challenge)
             raise ChallengeError(f"Incorrect code. {challenge.attempts_left} attempt(s) left.")
 
         challenge.consumed = True
@@ -297,6 +303,7 @@ class AuthService:
         # A reset clears any lockout and kicks out every existing session.
         user.failed_attempts = 0
         user.locked_until = None
+        self.store.persist_user(user)
         self.store.drop_sessions_for(user.email)
         if self.current_session and self.current_session.email == user.email:
             self.current_session = None
@@ -316,6 +323,8 @@ class AuthService:
         user.failed_attempts = 0
         user.locked_until = None
         user.last_login_at = utcnow()
+        # Also flushes a password_hash that sign_in may have just upgraded.
+        self.store.persist_user(user)
         now = utcnow()
         session = self.store.add_session(
             Session(
@@ -329,6 +338,29 @@ class AuthService:
         )
         self.current_session = session
         return session
+
+    # The CLI keeps one signed-in user in `current_session`. HTTP has no such
+    # thing - each request arrives with its own cookie - so these two resolve a
+    # session from a token instead of from instance state. Same store, same
+    # rules, no shared mutable state between concurrent requests.
+
+    def resolve_session(self, token: str) -> Session:
+        """Look up a session by its token. Raises SessionError if unusable."""
+        if not token:
+            raise SessionError("You are not signed in.")
+        session = self.store.get_session(token)
+        if session is None:
+            raise SessionError("You are not signed in.")
+        if session.is_expired:
+            self.store.drop_session(token)
+            raise SessionError("Your session expired. Sign in again.")
+        self.store.touch_session(token)
+        return session
+
+    def sign_out_token(self, token: str) -> None:
+        """Revoke one session by token. Idempotent - signing out twice is fine."""
+        if token:
+            self.store.drop_session(token)
 
     def whoami(self) -> Session:
         session = self.current_session

@@ -1,6 +1,4 @@
-node_modules/
-.next/
-out/
-.DS_Store
+# Local credentials: database password, SMTP app password, Twilio token.
 .env
-.env*.local
+.env.*
+!.env.example
