@@ -1,3 +1,5 @@
+import type { CommunityLanguage } from '@/lib/library'
+
 export type CommunityEntry = {
   id: string
   name: string
@@ -5,45 +7,48 @@ export type CommunityEntry = {
   /** ISO date (YYYY-MM-DD) so it sorts and range-filters as a plain string. */
   uploadedOn: string
   language: string
+  /** True once this account holds a copy. */
+  installed: boolean
+  /** True when the signed-in account published it. */
+  mine: boolean
+  signs: number
+  samples: number
 }
 
-/** Two-letter codes shown in the Language column, with names used for search. */
+/**
+ * A published language as the browse table wants it.
+ *
+ * The table sorts and range-filters on plain strings, so the timestamp is cut
+ * back to a bare ISO date here rather than teaching every comparison about
+ * time zones.
+ */
+export function toEntry(language: CommunityLanguage): CommunityEntry {
+  return {
+    id: language.id,
+    name: language.name,
+    author: language.author ?? 'unknown',
+    uploadedOn: (language.published_at ?? '').slice(0, 10),
+    language: language.hand_control,
+    installed: language.installed,
+    mine: language.mine,
+    signs: language.sign_count,
+    samples: language.sample_count,
+  }
+}
+
+
+
+/** Hand-control values present in the loaded rows, for the filter. */
+export function availableLanguages(entries: CommunityEntry[]) {
+  return [...new Set(entries.map((entry) => entry.language))].sort()
+}
+
+/** Spelled out for the filter chips and the column tooltip. */
 export const languageNames: Record<string, string> = {
-  EN: 'English',
-  JP: 'Japanese',
-  ES: 'Spanish',
-  FR: 'French',
-  DE: 'German',
-  IT: 'Italian',
-  KR: 'Korean',
-  CN: 'Chinese',
-  PT: 'Portuguese',
-  NL: 'Dutch',
-  AR: 'Arabic',
-  RU: 'Russian',
+  left: 'Left hand only',
+  right: 'Right hand only',
+  both: 'Both hands',
 }
-
-export const communityEntries: CommunityEntry[] = [
-  { id: 'c01', name: 'Alphabet A–Z', author: 'maya.chen', uploadedOn: '2026-08-14', language: 'EN' },
-  { id: 'c02', name: 'Numbers 0–100', author: 'r.okafor', uploadedOn: '2026-08-02', language: 'EN' },
-  { id: 'c03', name: 'Everyday Greetings', author: 'yuki.tanaka', uploadedOn: '2026-07-28', language: 'JP' },
-  { id: 'c04', name: 'Medical Vocabulary', author: 'dr.alvarez', uploadedOn: '2026-07-19', language: 'ES' },
-  { id: 'c05', name: 'Kitchen & Cooking', author: 'l.dubois', uploadedOn: '2026-07-11', language: 'FR' },
-  { id: 'c06', name: 'Travel Essentials', author: 'm.schmidt', uploadedOn: '2026-06-30', language: 'DE' },
-  { id: 'c07', name: 'Classroom Basics', author: 's.rossi', uploadedOn: '2026-06-22', language: 'IT' },
-  { id: 'c08', name: 'Emotions & Feelings', author: 'h.park', uploadedOn: '2026-06-15', language: 'KR' },
-  { id: 'c09', name: 'Family Members', author: 'w.zhang', uploadedOn: '2026-06-03', language: 'CN' },
-  { id: 'c10', name: 'Workplace Terms', author: 'a.costa', uploadedOn: '2026-05-27', language: 'PT' },
-  { id: 'c11', name: 'Sports & Fitness', author: 'j.visser', uploadedOn: '2026-05-18', language: 'NL' },
-  { id: 'c12', name: 'Days, Months, Time', author: 'f.haddad', uploadedOn: '2026-05-06', language: 'AR' },
-  { id: 'c13', name: 'Colours & Shapes', author: 'n.volkov', uploadedOn: '2026-04-29', language: 'RU' },
-  { id: 'c14', name: 'Fingerspelling Drills', author: 'maya.chen', uploadedOn: '2026-04-12', language: 'EN' },
-  { id: 'c15', name: 'Weather & Seasons', author: 'yuki.tanaka', uploadedOn: '2026-03-30', language: 'JP' },
-  { id: 'c16', name: 'Directions & Places', author: 'l.dubois', uploadedOn: '2026-03-17', language: 'FR' },
-]
-
-/** Codes actually present in the data, for the language filter. */
-export const availableLanguages = [...new Set(communityEntries.map((e) => e.language))].sort()
 
 const dateFormatter = new Intl.DateTimeFormat('en-GB', {
   day: '2-digit',
