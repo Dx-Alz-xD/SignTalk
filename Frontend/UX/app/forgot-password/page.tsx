@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { ForgotPasswordScreen } from '@/components/screens/forgot-password-screen'
+import { ForgotPasswordFlow } from '@/components/auth-flows'
 import { PageShell } from '@/components/page-shell'
 import { PageSchema, type Crumb } from '@/components/structured-data'
 
@@ -34,7 +34,7 @@ export default function ForgotPasswordPage() {
         crumbs={crumbs}
       />
       <PageShell windowTitle="SignTalk — Reset password">
-        <ForgotPasswordScreen crumbs={crumbs} />
+        <ForgotPasswordFlow crumbs={crumbs} />
       </PageShell>
     </>
   )

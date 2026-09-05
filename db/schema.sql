@@ -396,4 +396,68 @@ INSERT INTO schema_migrations (version, name)
 VALUES (1, 'initial schema')
 ON CONFLICT (version) DO NOTHING;
 
+
+-- ===========================================================================
+-- MIGRATION 2: trainer configuration and symbol output
+-- ===========================================================================
+-- Added after the first release, so these are ALTERs rather than edits to the
+-- CREATE TABLE above - an existing database has to reach the same shape.
+
+-- How many hands a language is signed with. Purely descriptive on the model
+-- side (features.py always encodes both slots), but the trainer uses it to
+-- tell the user what to hold up, and to refuse samples that clearly do not
+-- match what the language declared.
+ALTER TABLE languages ADD COLUMN IF NOT EXISTS hand_control TEXT NOT NULL DEFAULT 'both';
+
+-- Frames one capture collects. Default matches DEFAULT_SAMPLES in
+-- detector/trainer.py; raising it trades recording time for a tighter model.
+ALTER TABLE languages ADD COLUMN IF NOT EXISTS sample_target INTEGER NOT NULL DEFAULT 40;
+
+DO $$
+BEGIN
+    ALTER TABLE languages ADD CONSTRAINT languages_hand_control
+        CHECK (hand_control IN ('left', 'right', 'both'));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$
+BEGIN
+    ALTER TABLE languages ADD CONSTRAINT languages_sample_target
+        CHECK (sample_target BETWEEN 5 AND 500);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- What the translator emits when it recognises this symbol.
+--
+--   text   the symbol's own name, or a phrase        "hello", "thank you"
+--   space  a single space, so words can be separated  -
+--   key    one named key                              Enter, Backspace, Tab
+--   combo  a key combination                          Ctrl+C
+--
+-- Kept per symbol rather than per sign because a single vocabulary mixes
+-- letters, words and controls freely - an alphabet needs a space key as much
+-- as it needs the letters.
+ALTER TABLE symbols ADD COLUMN IF NOT EXISTS output_kind TEXT NOT NULL DEFAULT 'text';
+ALTER TABLE symbols ADD COLUMN IF NOT EXISTS output_value TEXT NOT NULL DEFAULT '';
+
+DO $$
+BEGIN
+    ALTER TABLE symbols ADD CONSTRAINT symbols_output_kind
+        CHECK (output_kind IN ('text', 'space', 'key', 'combo'));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$
+BEGIN
+    -- 'space' carries no value; the others must say what they emit, except
+    -- 'text', which falls back to the symbol's name when left blank.
+    ALTER TABLE symbols ADD CONSTRAINT symbols_output_value
+        CHECK (output_kind IN ('text', 'space') OR char_length(output_value) > 0);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+INSERT INTO schema_migrations (version, name)
+VALUES (2, 'trainer configuration and symbol output')
+ON CONFLICT (version) DO NOTHING;
+
 COMMIT;

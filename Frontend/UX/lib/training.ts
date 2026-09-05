@@ -80,6 +80,33 @@ export function encodeFrame(
   return api('/training/encode', { body: { hands }, signal })
 }
 
+export type Prediction = {
+  /** "sign / symbol", as library.training_set labels them. */
+  label: string
+  confidence: number
+  view: string
+  margin: number
+  runnerUp: string | null
+  meta: Record<string, unknown> | null
+}
+
+/**
+ * Classifies one frame against the caller's model.
+ *
+ * The server deliberately does not smooth: a single frame is a single opinion,
+ * and the client is what decides when a run of them counts as a sign held.
+ */
+export function predictFrame(
+  hands: HandSample[],
+  languageId?: string | null,
+  signal?: AbortSignal,
+): Promise<{ hands: number; prediction: Prediction | null; untrained?: boolean }> {
+  return api('/training/predict', {
+    body: { hands, languageId: languageId ?? null },
+    signal,
+  })
+}
+
 /** Straight-line distance between two feature vectors, as features.py defines it. */
 export function vectorDistance(a: number[], b: number[]): number {
   let total = 0

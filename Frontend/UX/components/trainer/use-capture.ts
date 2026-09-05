@@ -35,10 +35,13 @@ const SAMPLE_INTERVAL_MS = 80
 export function useCapture({
   handsRef,
   onSaved,
+  target = TARGET_SAMPLES,
 }: {
   /** Latest tracked hands, written by the render loop every frame. */
   handsRef: { current: HandSample[] }
   onSaved: (view: StoredView) => void
+  /** Frames to collect, from the language's own sample_target. */
+  target?: number
 }) {
   const [phase, setPhase] = useState<Phase>('idle')
   const [collected, setCollected] = useState(0)
@@ -61,7 +64,7 @@ export function useCapture({
   useEffect(() => cancel, [cancel])
 
   const start = useCallback(
-    async (target: { symbolId: string; view: string; replace: boolean }) => {
+    async (into: { symbolId: string; view: string; replace: boolean }) => {
       const run = (runId.current += 1)
       const alive = () => runId.current === run
 
@@ -81,7 +84,7 @@ export function useCapture({
       let previous: number[] | null = null
       const deadline = Date.now() + CAPTURE_TIMEOUT_MS
 
-      while (alive() && samples.length < TARGET_SAMPLES && Date.now() < deadline) {
+      while (alive() && samples.length < target && Date.now() < deadline) {
         const hands = handsRef.current
         if (hands.length === 0) {
           // Nothing to measure against — drop the reference so the first frame
@@ -131,10 +134,10 @@ export function useCapture({
 
       setPhase('saving')
       try {
-        const result = await storeSamples(target.symbolId, {
-          view: target.view,
+        const result = await storeSamples(into.symbolId, {
+          view: into.view,
           samples,
-          replace: target.replace,
+          replace: into.replace,
         })
         if (!alive()) return
         onSaved(result.view)
@@ -146,7 +149,7 @@ export function useCapture({
         setPhase('idle')
       }
     },
-    [handsRef, onSaved],
+    [handsRef, onSaved, target],
   )
 
   return {
@@ -158,7 +161,7 @@ export function useCapture({
     start,
     cancel,
     clearError: useCallback(() => setError(null), []),
-    target: TARGET_SAMPLES,
+    target,
   }
 }
 

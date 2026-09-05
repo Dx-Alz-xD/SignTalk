@@ -32,7 +32,6 @@ const featured: Action = {
     'Live sign-to-text transcription, with optional translation to other spoken or signed languages.',
   icon: Languages,
   meta: 'Camera · live',
-  pending: true,
 }
 
 const actions: Action[] = [
