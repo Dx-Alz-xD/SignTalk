@@ -56,10 +56,7 @@ export function CameraWorkspace() {
 
   return (
     <div className="flex flex-1 flex-col animate-screen-in">
-      <TrainerHeader
-        crumbs={crumbs}
-        status={phase === 'training' ? 'Training' : cameraOn ? 'Camera live' : 'Camera idle'}
-      />
+      <TrainerHeader crumbs={crumbs} />
 
       <div className="grid flex-1 grid-cols-1 gap-5 px-5 py-6 sm:px-8 lg:grid-cols-[1fr_20rem]">
         <div className="flex flex-col gap-4">

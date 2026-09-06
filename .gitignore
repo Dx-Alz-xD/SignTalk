@@ -1,4 +1,42 @@
-# Local credentials: database password, SMTP app password, Twilio token.
+# ---------------------------------------------------------------- secrets --
+# Database password, SMTP app password, Twilio token.
 .env
 .env.*
 !.env.example
+
+# ---------------------------------------------------------------- runtime --
+# SQLite database the backend falls back to when there is no PostgreSQL.
+backend/data/
+
+# ----------------------------------------------------------------- Python --
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ------------------------------------------------------------------- Node --
+# Each app also has its own .gitignore; these catch anything at the root.
+node_modules/
+.next/
+*.tsbuildinfo
+.pnpm-store/
+
+# ------------------------------------------------------------------- logs --
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# ----------------------------------------------------------------- editors --
+.vscode/
+.idea/
+*.swp
+.claude/
+
+# ---------------------------------------------------------------------- OS --
+.DS_Store
+Thumbs.db
+desktop.ini

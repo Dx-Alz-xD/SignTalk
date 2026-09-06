@@ -98,7 +98,7 @@ export function SignUpScreen({
       )
     } catch (error) {
       // A taken email or username is the common case, and the field it belongs
-      // to is not knowable from the response — show it above the form.
+      // to is not knowable from the response, show it above the form.
       setFailure(errorMessage(error))
       setSubmitting(false)
     }

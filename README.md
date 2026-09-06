@@ -1,262 +1,262 @@
-# SignTalk — CLI Authentication Backend
+# SignTalk
 
-The security / login layer for SignTalk. It is a command line app: sign up,
-sign in, or recover an account with a one-time code sent to your email or
-phone.
+Sign language that speaks your signs. SignTalk interprets sign language live
+from a camera, lets you train **any** sign language - a standard one or one
+you invented - and can type what you sign straight into a text field.
 
-**Nothing is written to a database or to disk.** Accounts live in memory for
-the life of the process, exactly as asked. The storage layer is isolated in
-one file so a real database can be dropped in later without touching the
-auth rules.
+Nothing leaves the device but numbers: the browser (or the desktop detector)
+runs MediaPipe hand tracking locally and sends 21 landmarks per hand to the
+API. No frame is ever uploaded or stored.
+
+## Repository layout
+
+```
+SignTalk/
+├── backend/      FastAPI service: accounts, sign library, training, recognition
+├── detector/     camera CLI, and the feature encoder + classifier the API shares
+├── db/           schema.sql (PostgreSQL), schema.sqlite.sql, apply.ps1
+├── docs/         architecture, data model, API reference
+├── scripts/      setup.ps1 and dev.ps1
+├── Frontend/
+│   ├── UX/                      the app  (Next.js, port 3001)
+│   └── SignTalk-comm-database/  standalone community browser (port 3000)
+├── desktop/      Electron shell (placeholder)
+├── archive/      superseded work, built by nothing
+├── .env.example  every setting, all optional
+└── requirements.txt
+```
+
+| path | what it is |
+| --- | --- |
+| `backend/` | The API. Accounts, the sign library, training, recognition, publishing, transcription. Runs on **PostgreSQL or SQLite**, see below. |
+| `detector/` | Standalone camera CLI, and the home of `features.py` and `classifier.py`, which the API imports so browser and desktop samples are interchangeable. Ships the ASL alphabet and digit dataset. |
+| `db/` | The two schema files and the PowerShell script that applies the Postgres one. |
+| `docs/` | [architecture.md](docs/architecture.md) for how the pieces fit, [schema.md](docs/schema.md) for every table and why, [api.md](docs/api.md) for every endpoint. |
+| `scripts/` | `setup.ps1` installs everything; `dev.ps1` starts the API and the app together. |
+| `Frontend/UX/` | **The app.** Sign in, Translator, Trainer, Direct Paste, Video Translator, Community, Account, Settings. |
+| `Frontend/SignTalk-comm-database/` | Standalone copy of the community browser, kept as its own app. |
+| `desktop/` | Electron shell. Builds `Frontend/UX` with `DESKTOP_BUILD=1` and exposes `window.signtalk` so Direct Paste can type into any application. Not implemented yet. |
+| `archive/` | Finished work kept out of the way. Nothing builds or imports it. |
 
 ## Run it
 
-```bash
-pip3 install -r requirements.txt
-```
+Three processes: the API, the web app, and (optionally) a database.
+
+On Windows, `scripts\setup.ps1` does the install and `scripts\dev.ps1` starts
+both servers in their own windows. The rest of this section is what those do.
+
+### 1. Backend API
 
 ```bash
-python3 backend/cli.py
+pip install -r requirements.txt
+python -m uvicorn backend.api.main:app --reload --port 8000
 ```
 
-Two dependencies: `argon2-cffi` for password hashing, and `certifi` so
-outbound TLS works on macOS. If `argon2-cffi` is missing the app still runs —
-it falls back to PBKDF2-HMAC-SHA256 and says so on the banner — but Argon2id
-is the intended algorithm.
+Copy `.env.example` to `.env` for anything you want to configure. Every value
+in it is optional.
 
-## Demo credentials
+That is all. On startup the backend picks a database:
 
-| field | value |
+- **`DATABASE_URL=postgresql://...`** in `.env` (or the shell) - uses PostgreSQL.
+  Create the database and apply the schema first:
+  `powershell -ExecutionPolicy Bypass -File db\apply.ps1` (or
+  `psql -U postgres -d signtalk -f db/schema.sql`).
+- **Nothing configured** - it probes `localhost:5432` for under a second. If a
+  PostgreSQL server answers it uses that; otherwise it falls back to **SQLite**
+  at `backend/data/signtalk.db`, creating the file and the schema itself. This
+  is what happens on a laptop that never installed Postgres, and it is fine for
+  one machine.
+- **`DATABASE_URL=sqlite:///backend/data/signtalk.db`** or `SIGNTALK_DB=sqlite`
+  - SQLite without the probe.
+- **`SIGNTALK_DB=postgres`** - refuse to fall back; fail loudly if Postgres is
+  down. Use this in a deployment.
+
+`python -m backend.setup_db` walks through the choice interactively and writes
+`.env`; `--sqlite` does it with no questions; `--check` reports what the API
+would use right now. `GET /health` on the running API says which engine is live
+and which optional capabilities are installed; the Settings page shows the same
+list.
+
+Sessions last 30 minutes and **slide**: using the app pushes the expiry
+forward, so you are signed out after half an hour of quiet rather than half an
+hour after signing in.
+
+A demo account is seeded on first run: **example@gmail.com / 123456**.
+
+**Built-in ISL and ASL.** The bundled ASL dataset (`detector/asl_dataset`) and,
+if present, an ISL dataset (`D:\dataset_ISL` by default - one folder per letter,
+images inside; override both with `SIGNTALK_DATASETS="ISL=path;ASL=path"`) are
+imported once, in the background at start-up, as languages owned by the
+`signtalk` system account and published to the community. **Every account gets
+a copy** - at sign-up, at sign-in, and the first time its library is listed -
+so the Translator recognises both alphabets from the first minute, for accounts
+that existed before the import as well. Needs the
+importer's extra dependencies: `pip install mediapipe opencv-python`. To run it
+by hand, or import any other dataset for any account:
+
+```bash
+python -m backend.import_dataset D:\dataset_ISL --name ISL --system        # built-in
+python -m backend.import_dataset ./my_signs --name "Home signs" --owner you@x.com
+```
+
+Set `SIGNTALK_AUTO_IMPORT=0` to never import at start-up.
+
+Email and SMS codes for password recovery are printed to the terminal unless
+real credentials are set - see `backend/auth/delivery.py` for the variables
+(`SMTP_*`, `TWILIO_*`, `TEXTBELT_KEY`). `python backend/check_delivery.py`
+tests them.
+
+### 2. Web app
+
+```bash
+cd Frontend/UX
+pnpm install
+pnpm dev          # http://localhost:3001
+```
+
+`pnpm dev` first copies the MediaPipe WASM runtime into `public/` (gitignored).
+The app talks to `http://localhost:8000` by default; set
+`NEXT_PUBLIC_SIGNTALK_API` to point elsewhere. Optional:
+`NEXT_PUBLIC_TRANSLATE_URL` for a LibreTranslate-compatible endpoint when the
+browser has no built-in translator (Chrome 138+ has one).
+
+### 3. Camera CLI (optional)
+
+```bash
+pip install -r detector/requirements.txt
+python -m detector
+```
+
+Trains and interprets from a desktop camera window, and can import the bundled
+ASL dataset. It stores into `detector/data/library.json`, not the API database.
+
+## The app
+
+**Translator.** Live interpretation into text, then translation into a spoken
+language - or into another sign language. By default it interprets across
+**every sign language in your library** (your own and any installed from the
+community) and labels each sign with the vocabulary it came from; pick one
+vocabulary or one language to scope it. **Speed mode** trusts a sign after two
+agreeing frames at 45% confidence, for fluent signing. Choosing a sign
+language as the target spells the transcript out as that language's signs,
+using the reference pictures its owner recorded, one every N seconds (the
+owner sets N). Every sign language declares the **spoken language** its
+symbols spell (English, Hindi, Spanish...), so sign-to-sign translation goes
+signs → text in the source's spoken language → translated into the target's
+→ the target's symbols; the pipeline is shown on screen, and when both spell
+the same language the translation step is skipped. Text typed into the
+transcript box goes through the same pipeline. A language whose owner has not
+turned on "Allow gesture translation" is refused as a target, and says so.
+
+**Trainer.** Create a sign language (name, which hands, default frames per
+capture), add symbols, hold each one in front of the camera. Frames only count
+while the hand is steady; a slider sets the frame count for each capture.
+Each symbol says what it types: text, a space, a key, or a shortcut. **Import
+dataset** takes a zip or a folder of images (one folder per symbol) and
+tracks the hands in the browser, so nothing but landmarks is uploaded. With
+"Allow gesture translation" on, the last frame of every capture (or the first
+image of an import) is kept as the symbol's reference picture - the one place
+SignTalk stores a picture, and off by default - and a camera button on each
+symbol takes a fresh one any time. A symbol with no photo is shown as its
+**hand skeleton**, drawn from a stored sample, so every trained symbol has a
+picture whether or not photos were ever kept.
+
+**Publishing and the security review.** "Add to the community database" is on
+by default for a new language and takes effect the moment it is created; an
+untrained language simply lists with 0 samples until trained. Every publish
+runs a review first and is refused if anything blocking turns up: a symbol
+that presses a key outside the editing/navigation set or sends a shortcut
+outside clipboard/undo (an installed language types into other people's
+apps), text with control characters or markup, or sample blobs that are not
+hand landmarks. The owner sees the same review on the edit screen.
+
+**Account** (click your avatar). Your details, change password (signs every
+other device out), and every language you own, published or private, with
+publish, unpublish and delete on each. **Profiles** (`/app/users/<name>`,
+reached from any author in the Community Database) show a member's published
+languages, installable in one click.
+
+**Settings.** Saved to the account, so they follow you to another browser or
+machine, and every one of them is read by something:
+
+| Setting | What reads it |
 | --- | --- |
-| email | `example@gmail.com` |
-| password | `123456` |
-| username | `demo` |
-| phone | `+15555550100` (a reserved-for-fiction number) |
+| Theme, reduce motion | The whole app; the theme also syncs the top-bar toggle |
+| Camera, mirror preview, draw skeleton | Every camera screen. The tracked image stays mirrored whatever you pick, because that is what the models were trained on; only the picture you see flips |
+| Default pace, minimum confidence | The recogniser, in the Translator and Direct Paste |
+| Capture countdown | The Trainer's lead-in before it starts collecting frames |
+| Overlay position, size, opacity, caption | Where the Video Translator's sign starts, before you drag it |
 
-Seeded at startup and printed on the banner. For a live SMS demo, override
-the number with `export SIGNTALK_DEMO_PHONE=+91...` before launching.
+The page also reports what this particular server can do (speech to text,
+dataset import, hand skeletons), naming the one command that installs anything
+missing.
 
-## The menu
+**Video Translator.** Upload a spoken video and its words are signed over the
+top, timed to the speech. The video never leaves the browser: its soundtrack
+is decoded there to a small 16 kHz WAV and sent for transcription
+(faster-whisper on the server, word timestamps, deleted afterwards). Each
+word's signs - a whole-word sign when the vocabulary has one, otherwise its
+letters - are spread across the exact moment the word is spoken, in whichever
+of your sign languages you pick. The overlay drags anywhere on the video, with
+size and opacity sliders and the current word captioned under it; a speed
+control slows the video so no sign flashes past too fast, and the app suggests
+the rate. The player's own fullscreen button takes the overlay along (the
+browser's native one would fullscreen the bare video), and the overlay is
+positioned against the picture itself, so it sits in the same spot at any
+size. When the speech is in a different language from the one the chosen sign
+language spells, one click translates the transcript sentence by sentence,
+each sentence kept to the moment the original was said. Click any word in the
+transcript to jump to it. Without faster-whisper installed, a subtitle file
+(.srt/.vtt) or a typed transcript does the timing instead.
 
-```
-1  Sign up (new account)
-2  Sign in with password
-3  Forgot password / can't sign in
-4  Session status  (who am I)
-5  Sign out
-6  Registered accounts  (dev view)
-0  Exit
-```
+**Direct Paste.** Camera on, click into any text field, sign - the words are
+typed at your cursor. On the website "any text field" means any input on the
+page (there is a scratchpad when nothing is focused). In the desktop app it
+types into whichever application is in front, through `window.signtalk`.
 
-**1 — Sign up.** Username, email, password, and an optional phone number for
-SMS codes. Validates the format of each and rejects duplicate emails and
-usernames.
+**Community Database.** Browse published sign languages, filter, and install
+copies - samples included, so an installed language recognises signs at once.
 
-**2 — Sign in with password.** Accepts either the email or the username.
-After 5 failed attempts the account locks for 5 minutes.
+## How recognition works
 
-**3 — Forgot password.** This is the only way in without a password, and it
-is a single flow with two possible endings:
+A frame becomes a 190-float vector (`detector/features.py`): per hand, 21
+landmarks wrist-centred, palm-scaled and rotation-normalised, the removed
+rotation as cos/sin, 28 pairwise fingertip distances, and a presence flag,
+plus the offset between hands. Recognition is distance-weighted k-nearest
+neighbour with margin-based confidence (`detector/classifier.py`). The browser
+and the desktop detector produce bit-identical vectors, so models trained
+either way are interchangeable. Raw landmarks are what the database stores;
+feature vectors are a cache that is rebuilt if the layout changes.
 
-```
-enter email
-   -> choose a channel:  email  or  SMS
-   -> a 6-digit code is sent there
-   -> enter the code
-   -> code verified, then pick one:
-        1. Set a new password
-        2. Sign in now without changing it   <- passwordless
-```
+## API surface added in this round
 
-Passwordless sign-in is deliberately **not** a standing menu option. You only
-reach it by proving you control the inbox or the phone on the account, which
-is the same proof a password reset requires. Ending 2 leaves the password
-untouched.
-
-**6 — Registered accounts.** A dev view, useful on stage: it shows that what
-is actually stored is an Argon2id hash, never the password anyone typed.
-
-## Turning on real email and SMS
-
-Out of the box both channels are **simulated** — the message is drawn in your
-terminal, so a demo needs no network and no accounts. To get codes on an
-actual phone and in an actual inbox, put credentials in a `.env` file:
-
-```bash
-cp .env.example .env
-```
-
-Then check your wiring before you need it:
-
-```bash
-python3 backend/check_delivery.py
-```
-
-That prints which channel is live and which is still simulated, with the
-exact setup steps for whatever is missing. Once you have filled something in,
-prove it end to end — this sends a real message and tells you which code to
-look for:
-
-```bash
-python3 backend/check_delivery.py --email you@gmail.com --sms +919812345678
-```
-
-### SMS — Twilio
-
-1. Sign up at `twilio.com/try-twilio`. The trial comes with credit and a
-   phone number, no card required.
-2. Copy your **Account SID** and **Auth Token** from `console.twilio.com`.
-3. Your Twilio number is under **Phone Numbers → Active Numbers**. It must be
-   SMS-capable.
-4. **Trial accounts can only text verified numbers.** Add your own phone under
-   **Phone Numbers → Verified Caller IDs** before you try to send to it —
-   skipping this is the single most common failure.
-
-```
-TWILIO_ACCOUNT_SID=ACxxxxxxxx
-TWILIO_AUTH_TOKEN=xxxxxxxx
-TWILIO_FROM_NUMBER=+15017122661
-```
-
-Twilio also prepends *"Sent from your Twilio trial account"* to every message
-until you upgrade, which is worth knowing before it shows up on the projector.
-
-`check_delivery.py` validates your SID and token against Twilio's Accounts
-API *before* trying to send, so a credential problem never gets mistaken for
-a recipient problem. It also tells you whether the account is Trial or Full.
-Common Twilio errors are mapped to the actual fix rather than passed through
-raw — an unverified trial recipient (21608), a bad token (20003), a From
-number that is not yours (21659), and so on.
-
-### Email — Gmail app password
-
-Gmail will not accept your normal password over SMTP. You need an app
-password, which needs 2-Step Verification on first:
-
-1. Turn on 2-Step Verification at `myaccount.google.com/security`
-2. Create an app password at `myaccount.google.com/apppasswords`
-3. Paste the 16 characters into `.env`:
-
-```
-SMTP_HOST=smtp.gmail.com
-SMTP_PORT=587
-SMTP_USER=you@gmail.com
-SMTP_PASSWORD=the-16-character-app-password
-```
-
-Any other SMTP provider works the same way. `.env` is gitignored, so nothing
-secret ends up in the repo.
-
-### Fallback SMS — Textbelt, no signup
-
-Left in as a backup if you want SMS without a Twilio account. Set
-`TEXTBELT_KEY=textbelt` and the free key sends **one real text per day per
-IP**. `TEXTBELT_KEY=textbelt_test` reports success and sends nothing. Twilio
-takes priority whenever it is configured.
-
-### Getting codes for the demo account
-
-The seeded `example@gmail.com` account carries a reserved-for-fiction phone
-number, which no carrier will deliver to. Point it at your own phone — the
-same one you verified with Twilio:
-
-```
-SIGNTALK_DEMO_PHONE=+919812345678
-```
-
-### If real sending fails with a certificate error
-
-macOS python.org builds do not trust the system keychain, so outbound HTTPS
-dies with `CERTIFICATE_VERIFY_FAILED`. `certifi` in `requirements.txt` fixes
-it, and the code hands that bundle to every SMTP and API call. If you skipped
-the install, `pip3 install certifi` is the whole fix.
-
-### What a simulated message looks like
-
-```
-+--------------------------------------------------------------+
-|         INCOMING SMS (simulated - nothing was sent)          |
-+--------------------------------------------------------------+
-| To: +15555550100                                             |
-|                                                              |
-| SignTalk: your verification code is 284917. It expires in 5  |
-| minutes. Do not share it with anyone.                        |
-+--------------------------------------------------------------+
-```
-
-## Security decisions worth mentioning to the judges
-
-| Concern | What the code does |
+| endpoint | purpose |
 | --- | --- |
-| Password storage | **Argon2id**, 64 MiB memory cost, 3 passes, parallelism 4, 16-byte salt — OWASP's recommended profile. Memory hardness is what makes GPU cracking expensive. |
-| Algorithm migration | Hashes are self-describing. A legacy PBKDF2 hash still verifies, and is silently re-hashed to Argon2id the next time that user signs in. Raising the Argon2 parameters later triggers the same upgrade. |
-| Identical passwords | Per-password random salt, so two users with the same password get different hashes. |
-| Timing attacks | `hmac.compare_digest` for code comparison; a sign-in for a non-existent account still verifies against a real decoy hash, so it costs the same as a wrong password. |
-| Account enumeration | Wrong password and unknown account return the same message. The channel is chosen *before* any lookup, so the prompt never reveals whether the account exists or has a phone on file. |
-| Brute force | 5 failed passwords locks the account for 5 minutes. |
-| One-time codes | Generated with `secrets`, stored **hashed**, expire in 5 minutes, 3 guesses, and a new code retires the old one across both channels. |
-| Code replay | A code is burned the instant it verifies. What it buys is a separate single-use **recovery ticket**, good for 10 minutes and exactly one action. |
-| Ticket preserved on user error | A rejected new password (too short, same as the old one) does not consume the ticket — the user retries without starting over. |
-| Session hygiene | A password reset revokes every session already open for that account and clears any lockout. |
-| Failed delivery | The challenge is only recorded after the send succeeds, so a Twilio or SMTP error never leaves a live code the user never received. |
-| Shoulder surfing | Passwords are read with `getpass` (no echo); addresses and numbers are masked as `e*****e@gmail.com` and `+15*****0100` when echoed back. |
+| `GET /library/languages/{id}/review` | the security review publishing runs |
+| `PATCH /library/languages/{id}` | now also `gestureTranslation`, `gestureIntervalMs` |
+| `PUT / GET / DELETE /library/symbols/{id}/image` | a symbol's reference picture (JPEG/PNG/WebP, 400 KB cap) |
+| `GET /training/model?signId=` and `signId` in `POST /training/predict` | scope recognition to one vocabulary |
+| `POST /auth/password` | change password while signed in |
+| `GET /users/{username}` | public profile |
+| `GET / PATCH / DELETE /preferences` | per-account settings |
+| `DELETE /library/signs/{id}` | delete a vocabulary, and its language when it was the last one |
 
-## Using it from the rest of SignTalk
+The full list is in [docs/api.md](docs/api.md), and FastAPI serves interactive
+docs at `/docs`.
+| `GET /video/transcriber`, `POST /video/transcribe`, `GET /video/jobs/{id}` | speech-to-text jobs with word timings for the Video Translator (`pip install faster-whisper`; `SIGNTALK_WHISPER_MODEL` picks tiny/base/small/medium) |
 
-The CLI is only a driver. Everything lives in `AuthService`, so the
-translation app or a future REST layer can import it directly:
-
-```python
-from backend.auth import AuthService, CHANNEL_SMS
-
-auth = AuthService()
-auth.sign_up("aarav", "aarav@signtalk.dev", "sunflower22", "+919812345678")
-session = auth.sign_in("aarav@signtalk.dev", "sunflower22")
-
-# recovery: one code, then one of two endings
-challenge = auth.request_recovery_code("aarav@signtalk.dev", CHANNEL_SMS)
-ticket = auth.verify_recovery_code(challenge, "284917")
-
-auth.reset_password_with_ticket(ticket, "new-password")   # ending 1
-# auth.sign_in_with_ticket(ticket)                        # ending 2
-```
-
-Every failure raises a typed error from `backend/auth/errors.py`
-(`ValidationError`, `InvalidCredentialsError`, `AccountLockedError`,
-`ChallengeError`, `SessionError`, `DuplicateAccountError`), plus
-`DeliveryError` for a send that fails — so callers never have to parse
-message strings.
+Schema migration 3 (`languages.gesture_translation`, `languages.gesture_interval_ms`,
+`symbol_images`) is in both schema files; SQLite databases created earlier gain
+the columns automatically on next open.
 
 ## Tests
 
 ```bash
-python3 backend/smoke_test.py
+python backend/smoke_test.py      # every auth flow, in-memory store
 ```
 
-29 named checks covering every flow plus the abuse cases — Argon2id
-upgrade-on-login, lockout, code replay, ticket reuse, SMS with no number on
-file, session revocation on reset, and the fact that a fresh process starts
-empty.
-
-## Layout
-
-```
-backend/
-  cli.py            menu-driven terminal interface
-  check_delivery.py verify real email / SMS credentials, send a test message
-  config.py         reads .env
-  smoke_test.py     end-to-end checks, no pytest needed
-  auth/
-    service.py      AuthService - all the rules live here
-    security.py     Argon2id hashing, codes, tokens, validation
-    models.py       User, Session, OtpChallenge, RecoveryTicket
-    store.py        in-memory store (swap this for a database later)
-    delivery.py     email + SMS senders: Twilio, SMTP, Textbelt, simulated
-    errors.py       typed errors
-```
-
-## Deliberately not done
-
-- **No database.** Per the brief. `store.py` is the only file that would change.
-- **No password policy beyond a 6-character minimum**, so the `123456` demo
-  credential stays valid. Strength is reported as advice, not enforced.
+The `backend/db.py` engines share one SQL dialect; anything Postgres-only is
+routed through `db.dialect` so both keep working. Schema changes go in both
+`db/schema.sql` and `db/schema.sqlite.sql`, and any column added to an existing
+table also goes in `db.COLUMN_MIGRATIONS` so a database made before it gains the
+column on next open.

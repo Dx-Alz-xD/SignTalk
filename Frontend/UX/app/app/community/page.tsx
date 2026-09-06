@@ -13,7 +13,7 @@ export const metadata: Metadata = {
 
 export default function CommunityPage() {
   return (
-    <PageShell windowTitle="SignTalk — Community Database">
+    <PageShell windowTitle="Community Database">
       <CommunityRoute />
     </PageShell>
   )

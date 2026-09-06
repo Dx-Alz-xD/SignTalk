@@ -2,7 +2,7 @@
  * The one place that talks to the SignTalk API.
  *
  * The session is an HttpOnly cookie set by the backend, so every request has
- * to opt into credentials — there is no token for this code to carry around,
+ * to opt into credentials, there is no token for this code to carry around,
  * which is the point: script on the page cannot read or leak it.
  */
 
@@ -13,8 +13,8 @@ export const API_BASE = (
 
 /**
  * A request that reached the server and came back refused, or never reached it
- * at all (status 0). `code` is the backend's own error name — ValidationError,
- * InvalidCredentialsError, ChallengeError and friends — so screens can branch
+ * at all (status 0). `code` is the backend's own error name, ValidationError,
+ * InvalidCredentialsError, ChallengeError and friends, so screens can branch
  * on the cause while still showing the server's wording.
  */
 export class ApiError extends Error {
@@ -28,7 +28,7 @@ export class ApiError extends Error {
     this.code = code
   }
 
-  /** True when the call never landed — server down, or CORS refused it. */
+  /** True when the call never landed, server down, or CORS refused it. */
   get offline(): boolean {
     return this.status === 0
   }
@@ -58,7 +58,7 @@ function codeOf(payload: Payload, status: number): string {
 }
 
 export type RequestOptions = {
-  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE'
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
   body?: unknown
   signal?: AbortSignal
 }
@@ -78,7 +78,7 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
     })
   } catch (cause) {
     // fetch only rejects when the request never completed, so this is never a
-    // rule the user broke — say so plainly instead of blaming their input.
+    // rule the user broke, say so plainly instead of blaming their input.
     if (signal?.aborted) throw cause
     throw new ApiError('Cannot reach the SignTalk server. Is the backend running?', 0, 'NetworkError')
   }

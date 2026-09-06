@@ -10,11 +10,11 @@ const description =
 
 export const metadata: Metadata = {
   // Absolute: the homepage should lead with the product, not with "Sign in".
-  title: { absolute: 'SignTalk — Real-time sign language interpretation' },
+  title: { absolute: 'SignTalk · Real-time sign language interpretation' },
   description,
   alternates: { canonical: '/' },
   openGraph: {
-    title: `${title} — SignTalk`,
+    title: `${title} · SignTalk`,
     description,
     url: '/',
     type: 'website',
@@ -25,11 +25,11 @@ export default function HomePage() {
   return (
     <>
       <PageSchema
-        name="SignTalk — Real-time sign language interpretation"
+        name="SignTalk · Real-time sign language interpretation"
         description={SITE_DESCRIPTION}
         path="/"
       />
-      <PageShell windowTitle="SignTalk — Sign in">
+      <PageShell windowTitle="Sign in" variant="auth">
         <LoginFlow />
       </PageShell>
     </>

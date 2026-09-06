@@ -60,6 +60,23 @@ class TicketBody(BaseModel):
     ticket_id: str = Field(min_length=1, max_length=400)
 
 
+class PasswordBody(BaseModel):
+    currentPassword: str = Field(min_length=1, max_length=200)
+    newPassword: str = Field(min_length=1, max_length=200)
+
+
+def _preinstall(user) -> None:
+    """Built-in languages for this account. Best effort: a hiccup here must
+    never fail a sign-in or a sign-up."""
+    if user is None:
+        return
+    try:
+        from .. import builtin
+        builtin.ensure_installed(user.id)
+    except Exception:
+        pass
+
+
 def _session_payload(session, user=None) -> dict:
     return {
         "username": session.username,
@@ -68,6 +85,9 @@ def _session_payload(session, user=None) -> dict:
         "expiresAt": session.expires_at.isoformat(),
         "minutesLeft": session.minutes_left,
         "phone": mask_phone(user.phone) if user and user.phone else None,
+        "joinedAt": user.created_at.isoformat() if user and user.created_at else None,
+        "lastLoginAt": (user.last_login_at.isoformat()
+                        if user and user.last_login_at else None),
     }
 
 
@@ -78,6 +98,10 @@ def sign_up(body: SignUpBody, response: Response, request: Request):
     auth = get_auth()
     user = auth.sign_up(body.username, body.email, body.password, body.phone)
     auth.store.record_event(user.email, "signup", ip=client_ip(request))
+
+    # Every language SignTalk ships (ISL and ASL alphabets) is copied into the
+    # new account so it recognises something from minute one.
+    _preinstall(user)
 
     # Signing up signs you in - otherwise the next screen would just be a
     # login form asking for the password typed ten seconds ago.
@@ -99,6 +123,7 @@ def sign_in(body: SignInBody, response: Response, request: Request):
     auth.store.record_event(session.email, "login_ok", ip=client_ip(request))
     set_session_cookie(response, session.token)
     user = auth.store.get_user_by_email(session.email)
+    _preinstall(user)
     return {"user": _session_payload(session, user)}
 
 
@@ -119,6 +144,20 @@ def sign_out(request: Request, response: Response):
 @router.get("/me")
 def me(session=Depends(current_session), user=Depends(current_user)):
     return {"user": _session_payload(session, user)}
+
+
+@router.post("/password")
+def change_password(body: PasswordBody, request: Request, response: Response):
+    """Set a new password while signed in. Re-issues the caller's session and
+    revokes every other one."""
+    auth = get_auth()
+    token = request.cookies.get(SESSION_COOKIE) or ""
+    session = auth.change_password(token, body.currentPassword, body.newPassword)
+    auth.store.record_event(session.email, "password_change", ip=client_ip(request))
+    set_session_cookie(response, session.token)
+    user = auth.store.get_user_by_email(session.email)
+    return {"user": _session_payload(session, user),
+            "message": "Password updated. Other devices have been signed out."}
 
 
 # ----------------------------------------------------------------- recovery --
@@ -189,4 +228,5 @@ def sign_in_with_ticket(body: TicketBody, response: Response, request: Request):
     auth.store.record_event(session.email, "login_ok_recovery", ip=client_ip(request))
     set_session_cookie(response, session.token)
     user = auth.store.get_user_by_email(session.email)
+    _preinstall(user)
     return {"user": _session_payload(session, user)}

@@ -1,5 +1,5 @@
 /**
- * Typed wrappers over /library — the vocabulary tree the trainer records into.
+ * Typed wrappers over /library, the vocabulary tree the trainer records into.
  *
  * The shape is language > sign > symbol > view:
  *
@@ -9,11 +9,11 @@
  *   view       "front"         one camera angle of that label, holding samples
  *
  * These come straight off the database rows, so the field names are snake_case
- * here and camelCase in the auth API — matching each endpoint rather than
+ * here and camelCase in the auth API, matching each endpoint rather than
  * inventing a third convention.
  */
 
-import { api } from '@/lib/api'
+import { API_BASE, api } from '@/lib/api'
 
 /** Which hands a language is signed with. */
 export type HandControl = 'left' | 'right' | 'both'
@@ -33,10 +33,48 @@ export type Language = {
   sample_target: number
   visibility: 'private' | 'unlisted' | 'public'
   published_at: string | null
+  /** Whether a reference picture is kept per symbol, for sign-to-sign translation. */
+  gesture_translation: boolean
+  /** Milliseconds each picture stays up during playback. */
+  gesture_interval_ms: number
+  /**
+   * The spoken language the symbols spell out, as a BCP-47 code (en, hi…).
+   * Translating between sign languages goes through this: signs → text in
+   * this language → translated → the target's signs.
+   */
+  spoken_language: string
+  /** What kind of sign language this is, in the owner's words ("Indian Sign Language"). */
+  tag: string
+  /** 'user' recorded, 'asl_dataset' imported from images, 'imported' from the community. */
+  source?: 'user' | 'asl_dataset' | 'imported'
   sign_count: number
   symbol_count: number
   sample_count: number
 }
+
+/**
+ * The tag to show for a language: its own when set, otherwise one guessed
+ * from a well-known name, otherwise a neutral label.
+ */
+export function languageTag(language: { name: string; tag?: string | null }): string {
+  if (language.tag?.trim()) return language.tag.trim()
+  return KNOWN_TAGS[language.name.trim().toUpperCase()] ?? 'Custom sign language'
+}
+
+export const KNOWN_TAGS: Record<string, string> = {
+  ISL: 'Indian Sign Language',
+  ASL: 'American Sign Language',
+  BSL: 'Bengali Sign Language',
+  JSL: 'Japanese Sign Language',
+  CSL: 'Chinese Sign Language',
+  LSF: 'French Sign Language',
+  DGS: 'German Sign Language',
+  AUSLAN: 'Australian Sign Language',
+}
+
+export const DEFAULT_GESTURE_INTERVAL_MS = 1200
+export const MIN_GESTURE_INTERVAL_MS = 200
+export const MAX_GESTURE_INTERVAL_MS = 10000
 
 export type Sign = {
   id: string
@@ -78,6 +116,8 @@ export type Symbol = {
   output_value: string
   views: View[]
   sample_count: number
+  /** True when a reference picture is stored for sign-to-sign translation. */
+  has_image: boolean
 }
 
 /** What a recognised symbol actually types. */
@@ -137,6 +177,11 @@ export function createVocabulary(input: {
   phrases?: string[]
   handControl?: HandControl
   sampleTarget?: number
+  gestureTranslation?: boolean
+  gestureIntervalMs?: number
+  spokenLanguage?: string
+  tag?: string
+  description?: string
 }): Promise<{ language: Language; sign: Sign; symbols: Symbol[] }> {
   return api('/library/vocabulary', {
     body: {
@@ -146,6 +191,11 @@ export function createVocabulary(input: {
       phrases: input.phrases ?? [],
       handControl: input.handControl ?? 'both',
       sampleTarget: input.sampleTarget ?? DEFAULT_SAMPLE_TARGET,
+      gestureTranslation: input.gestureTranslation ?? false,
+      gestureIntervalMs: input.gestureIntervalMs ?? DEFAULT_GESTURE_INTERVAL_MS,
+      spokenLanguage: input.spokenLanguage ?? 'en',
+      tag: input.tag ?? '',
+      description: input.description ?? '',
     },
   })
 }
@@ -163,6 +213,10 @@ export function updateLanguage(
     description?: string
     handControl?: HandControl
     sampleTarget?: number
+    gestureTranslation?: boolean
+    gestureIntervalMs?: number
+    spokenLanguage?: string
+    tag?: string
   },
 ): Promise<Language> {
   return api<{ language: Language }>(`/library/languages/${languageId}`, {
@@ -182,6 +236,74 @@ export function updateSymbol(
   }).then((r) => r.symbol)
 }
 
+/**
+ * Deletes a vocabulary (a sign) and everything in it. The server also removes
+ * the language when this was its last vocabulary; `languageDeleted` says so.
+ */
+export function deleteSign(signId: string): Promise<{ languageDeleted: boolean }> {
+  return api<{ ok: boolean; languageDeleted: boolean }>(`/library/signs/${signId}`, {
+    method: 'DELETE',
+  }).then((r) => ({ languageDeleted: r.languageDeleted }))
+}
+
+export function deleteLanguage(languageId: string): Promise<void> {
+  return api<{ ok: boolean }>(`/library/languages/${languageId}`, { method: 'DELETE' }).then(
+    () => undefined,
+  )
+}
+
+// ------------------------------------------------------------------- images --
+
+/**
+ * Stores a symbol's reference picture. Only allowed while the language has
+ * gesture translation on; the server checks the bytes are really an image.
+ */
+export function putSymbolImage(
+  symbolId: string,
+  image: { mime: string; base64: string; width?: number; height?: number },
+): Promise<void> {
+  return api<{ image: unknown }>(`/library/symbols/${symbolId}/image`, {
+    method: 'PUT',
+    body: { mime: image.mime, data: image.base64, width: image.width, height: image.height },
+  }).then(() => undefined)
+}
+
+/**
+ * The picture as an object URL, or null when there is none. Fetched with the
+ * session cookie rather than pointed at by an <img src>, so it works when the
+ * API sits on another host as well as on localhost.
+ */
+export async function fetchSymbolImageUrl(symbolId: string): Promise<string | null> {
+  try {
+    const response = await fetch(`${API_BASE}/library/symbols/${symbolId}/image`, {
+      credentials: 'include',
+    })
+    if (!response.ok) return null
+    return URL.createObjectURL(await response.blob())
+  } catch {
+    return null
+  }
+}
+
+// ----------------------------------------------------------------- review --
+
+export type ReviewIssue = {
+  level: 'block' | 'warn'
+  code: string
+  message: string
+}
+
+export type Review = {
+  ok: boolean
+  issues: ReviewIssue[]
+  summary: { signs: number; symbols: number; samples: number; gesture_translation: boolean }
+}
+
+/** The security review publishing runs, so the owner can read it first. */
+export function reviewLanguage(languageId: string, signal?: AbortSignal): Promise<Review> {
+  return api<Review>(`/library/languages/${languageId}/review`, { signal })
+}
+
 // ------------------------------------------------------------------ sharing --
 
 /** A language as it appears in the community database. */
@@ -191,6 +313,10 @@ export type CommunityLanguage = {
   description: string | null
   hand_control: HandControl
   published_at: string
+  gesture_translation: boolean
+  spoken_language: string
+  tag: string
+  source: 'user' | 'asl_dataset' | 'imported'
   author: string | null
   /** True when the caller published it. */
   mine: boolean
@@ -219,9 +345,24 @@ export function browseCommunity(
   }).then((r) => r.languages)
 }
 
-/** Copies a published language — samples and all — into your own library. */
+/** Copies a published language, samples and all, into your own library. */
 export function installLanguage(languageId: string): Promise<Language> {
   return api<{ language: Language }>(`/library/community/${languageId}/install`, {
     method: 'POST',
   }).then((r) => r.language)
+}
+
+// ---------------------------------------------------------------- profiles --
+
+/** What anyone signed in may see about an account. */
+export type PublicProfile = {
+  username: string
+  joined_at: string
+  languages: CommunityLanguage[]
+  published_count: number
+  install_count: number
+}
+
+export function fetchProfile(username: string, signal?: AbortSignal): Promise<PublicProfile> {
+  return api<PublicProfile>(`/users/${encodeURIComponent(username)}`, { signal })
 }

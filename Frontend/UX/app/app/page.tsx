@@ -18,7 +18,7 @@ export const metadata: Metadata = {
 
 export default function WorkspacePage() {
   return (
-    <PageShell windowTitle="SignTalk">
+    <PageShell windowTitle="Home">
       <Workspace />
     </PageShell>
   )

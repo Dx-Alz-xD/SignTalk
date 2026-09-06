@@ -3,7 +3,7 @@ import { AlertCircle, CheckCircle2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 /**
- * A message about the form as a whole rather than one field — a refused
+ * A message about the form as a whole rather than one field, a refused
  * sign-in, a server that isn't answering, a password that was just changed.
  */
 export function FormAlert({

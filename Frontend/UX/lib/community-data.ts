@@ -1,4 +1,4 @@
-import type { CommunityLanguage } from '@/lib/library'
+import { languageTag, type CommunityLanguage } from '@/lib/library'
 
 export type CommunityEntry = {
   id: string
@@ -6,6 +6,7 @@ export type CommunityEntry = {
   author: string
   /** ISO date (YYYY-MM-DD) so it sorts and range-filters as a plain string. */
   uploadedOn: string
+  /** Hand control - left / right / both. Field name kept as the sort key. */
   language: string
   /** True once this account holds a copy. */
   installed: boolean
@@ -13,6 +14,9 @@ export type CommunityEntry = {
   mine: boolean
   signs: number
   samples: number
+  /** What kind of sign language, in the author's words. */
+  tag: string
+  description: string
 }
 
 /**
@@ -33,6 +37,8 @@ export function toEntry(language: CommunityLanguage): CommunityEntry {
     mine: language.mine,
     signs: language.sign_count,
     samples: language.sample_count,
+    tag: languageTag(language),
+    description: language.description ?? '',
   }
 }
 

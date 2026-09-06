@@ -10,30 +10,35 @@ import {
   Loader2,
   Pencil,
   Plus,
+  Images,
   Sparkles,
   Trash2,
+  Upload,
   X,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input, Select } from '@/components/ui/input'
 import { FormAlert } from '@/components/form-alert'
-import { SignTalkLockup } from '@/components/signtalk-mark'
 import { useCameraStage } from '@/components/trainer/camera-stage'
 import { useCapture } from '@/components/trainer/use-capture'
+import { DatasetImport } from '@/components/trainer/dataset-import'
 import { LanguageDetailsForm } from '@/components/trainer/language-details-form'
 import { VocabularyTable, type Vocabulary } from '@/components/trainer/vocabulary-table'
 import { errorMessage } from '@/lib/api'
 import type { HandSample } from '@/lib/hand-tracker'
 import {
   DEFAULT_VIEW,
+  MIN_SAMPLE_TARGET,
   OUTPUT_KINDS,
   STANDARD_VIEWS,
   createSymbol,
+  deleteSign,
   deleteSymbol,
   listLanguages,
   listSigns,
   listSymbols,
   outputPreview,
+  putSymbolImage,
   updateSymbol,
   type OutputKind,
   type Symbol,
@@ -133,6 +138,15 @@ export function TrainerScreen({ onBack }: { onBack: () => void }) {
           setActive(vocabulary)
           setStep('details')
         }}
+        onDelete={async (vocabulary) => {
+          setFailure(null)
+          try {
+            await deleteSign(vocabulary.sign.id)
+            await reload()
+          } catch (cause) {
+            setFailure(errorMessage(cause))
+          }
+        }}
         onOpen={(vocabulary) => {
           setActive(vocabulary)
           setStep('training')
@@ -162,6 +176,10 @@ function TrainingWorkspace({
   const [cameraOn, setCameraOn] = useState(false)
   const [failure, setFailure] = useState<string | null>(null)
   const [saved, setSaved] = useState<string | null>(null)
+  // Frames for the *next* capture. Starts at the language's default and can
+  // be nudged per symbol - a subtle letter earns more frames than a fist.
+  const [frames, setFrames] = useState(language.sample_target)
+  const [importing, setImporting] = useState(false)
 
   const handsRef = useRef<HandSample[]>([])
   const [handCount, setHandCount] = useState(0)
@@ -182,7 +200,7 @@ function TrainingWorkspace({
     const found = await listSymbols(sign.id)
     setSymbols(found)
     setSelectedId((current) => current ?? found[0]?.id ?? null)
-    modelStatus(language.id).then(setModel).catch(() => setModel(null))
+    modelStatus({ languageId: language.id }).then(setModel).catch(() => setModel(null))
     return found
   }, [sign.id, language.id])
 
@@ -194,17 +212,29 @@ function TrainingWorkspace({
     (stored: StoredView) => {
       setSaved(
         `Saved ${stored.sample_count} sample${stored.sample_count === 1 ? '' : 's'} ` +
-          `to “${stored.view}” — ${stored.quality}.`,
+          `to “${stored.view}”: ${stored.quality}.`,
       )
-      refresh().catch(() => undefined)
+      // With gesture translation on, the frame on screen at the end of the
+      // hold becomes this symbol's reference picture. The canvas is the
+      // mirrored preview with the skeleton drawn on it - a fair likeness of
+      // what the person sees themselves doing.
+      const canvas = stage.canvasRef.current
+      if (language.gesture_translation && selectedId && canvas) {
+        void snapshot(canvas)
+          .then((image) => (image ? putSymbolImage(selectedId, image) : undefined))
+          .then(() => refresh())
+          .catch(() => refresh())
+      } else {
+        refresh().catch(() => undefined)
+      }
     },
-    [refresh],
+    [refresh, language.gesture_translation, selectedId, stage.canvasRef],
   )
 
   const capture = useCapture({
     handsRef,
     onSaved: handleSaved,
-    target: language.sample_target,
+    target: frames,
   })
 
   const busy = capture.phase !== 'idle'
@@ -220,10 +250,22 @@ function TrainingWorkspace({
       title={sign.name}
       subtitle={`${language.name} · ${language.hand_control} · ${language.sample_target} frames`}
       action={
-        <Button variant="ghost" size="sm" onClick={onEditDetails} className="text-muted-foreground">
-          <Pencil aria-hidden="true" />
-          Edit details
-        </Button>
+        <>
+          <Button
+            variant={importing ? 'outline' : 'ghost'}
+            size="sm"
+            onClick={() => setImporting((open) => !open)}
+            aria-expanded={importing}
+            className={importing ? undefined : 'text-muted-foreground'}
+          >
+            <Upload aria-hidden="true" />
+            Import dataset
+          </Button>
+          <Button variant="ghost" size="sm" onClick={onEditDetails} className="text-muted-foreground">
+            <Pencil aria-hidden="true" />
+            Edit details
+          </Button>
+        </>
       }
     >
       <div className="grid flex-1 gap-6 lg:grid-cols-[1fr_22rem]">
@@ -260,7 +302,7 @@ function TrainingWorkspace({
                   <>
                     <CameraOff className="size-7 text-muted-foreground" aria-hidden="true" />
                     <p className="max-w-xs text-sm text-muted-foreground">
-                      Camera is off. Frames never leave this device — only the hand
+                      Camera is off. Frames never leave this device; only the hand
                       landmarks are sent.
                     </p>
                   </>
@@ -280,7 +322,7 @@ function TrainingWorkspace({
 
                 {handsWrong && !busy && (
                   <span className="absolute bottom-3 left-3 rounded-full bg-warning/90 px-3 py-1 text-xs font-medium text-black backdrop-blur">
-                    This language is set to “{language.hand_control}” — show{' '}
+                    This language is set to “{language.hand_control}”: show{' '}
                     {wantedHands} hand{wantedHands === 1 ? '' : 's'}
                   </span>
                 )}
@@ -336,6 +378,36 @@ function TrainingWorkspace({
               </Select>
             </label>
 
+            <label
+              className="flex items-center gap-2 text-sm text-muted-foreground"
+              title="Frames this capture collects. Reset to the language default with the ⟲."
+            >
+              Frames
+              <input
+                type="range"
+                min={MIN_SAMPLE_TARGET}
+                max={200}
+                step={5}
+                value={frames}
+                disabled={busy}
+                onChange={(event) => setFrames(Number(event.target.value))}
+                className="h-2 w-28 cursor-pointer appearance-none rounded-full bg-muted accent-primary disabled:opacity-50"
+                aria-label="Frames for the next capture"
+              />
+              <span className="w-8 font-mono text-xs text-foreground">{frames}</span>
+              {frames !== language.sample_target && (
+                <button
+                  type="button"
+                  onClick={() => setFrames(language.sample_target)}
+                  disabled={busy}
+                  className="rounded-sm text-xs text-primary underline-offset-4 hover:underline"
+                  aria-label={`Reset to ${language.sample_target} frames`}
+                >
+                  ⟲ {language.sample_target}
+                </button>
+              )}
+            </label>
+
             {capture.phase === 'idle' ? (
               <Button
                 size="xl"
@@ -376,6 +448,15 @@ function TrainingWorkspace({
               </div>
             </div>
           )}
+
+          {importing && (
+            <DatasetImport
+              language={language}
+              sign={sign}
+              onDone={() => void refresh().catch(() => undefined)}
+              onClose={() => setImporting(false)}
+            />
+          )}
         </div>
 
         <SymbolPanel
@@ -384,6 +465,20 @@ function TrainingWorkspace({
           selectedId={selectedId}
           model={model}
           disabled={busy}
+          pictures={
+            !language.gesture_translation
+              ? 'off'
+              : stage.state === 'live'
+                ? 'ready'
+                : 'camera-off'
+          }
+          onTakePicture={async (symbolId) => {
+            const canvas = stage.canvasRef.current
+            if (!canvas) return
+            const image = await snapshot(canvas)
+            if (image) await putSymbolImage(symbolId, image)
+            await refresh()
+          }}
           onSelect={setSelectedId}
           onAdd={async (name) => {
             const created = await createSymbol(sign.id, name)
@@ -401,7 +496,7 @@ function TrainingWorkspace({
             setSelectedId((current) =>
               current === symbolId ? (remaining[0]?.id ?? null) : current,
             )
-            modelStatus(language.id).then(setModel).catch(() => setModel(null))
+            modelStatus({ languageId: language.id }).then(setModel).catch(() => setModel(null))
           }}
           onFailure={setFailure}
         />
@@ -418,6 +513,8 @@ function SymbolPanel({
   selectedId,
   model,
   disabled,
+  pictures,
+  onTakePicture,
   onSelect,
   onAdd,
   onSaveOutput,
@@ -429,6 +526,9 @@ function SymbolPanel({
   selectedId: string | null
   model: ModelStatus | null
   disabled: boolean
+  /** Whether a photo can be taken right now, and if not, why. */
+  pictures: 'ready' | 'camera-off' | 'off'
+  onTakePicture: (id: string) => Promise<void>
   onSelect: (id: string) => void
   onAdd: (name: string) => Promise<void>
   onSaveOutput: (
@@ -441,6 +541,14 @@ function SymbolPanel({
   const [name, setName] = useState('')
   const [adding, setAdding] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [snapping, setSnapping] = useState<string | null>(null)
+
+  const pictureHint =
+    pictures === 'ready'
+      ? 'Take a picture of this sign from the camera now'
+      : pictures === 'camera-off'
+        ? 'Turn the camera on to take a picture'
+        : 'Turn on “Allow gesture translation” in Edit details to keep pictures'
 
   async function submit(event: FormEvent) {
     event.preventDefault()
@@ -462,7 +570,7 @@ function SymbolPanel({
         <h3 className="font-semibold tracking-tight">Symbols in {signName}</h3>
         <p className="text-xs leading-relaxed text-muted-foreground">
           {model?.trained
-            ? `Model ready — ${model.labels.length} label${
+            ? `Model ready: ${model.labels.length} label${
                 model.labels.length === 1 ? '' : 's'
               }, ${model.sampleCount} samples.`
             : 'Two symbols with samples are needed before the model can tell them apart.'}
@@ -483,7 +591,7 @@ function SymbolPanel({
 
       {symbols.length === 0 ? (
         <p className="text-xs leading-relaxed text-muted-foreground">
-          No symbols yet. Each one is a label the interpreter can return — a letter, a
+          No symbols yet. Each one is a label the interpreter can return: a letter, a
           word, a phrase, or a key like space.
         </p>
       ) : (
@@ -517,6 +625,26 @@ function SymbolPanel({
                     <span className="ml-auto shrink-0 font-mono text-[0.6875rem] text-muted-foreground">
                       {symbol.sample_count}
                     </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSnapping(symbol.id)
+                      void onTakePicture(symbol.id)
+                        .catch((cause) => onFailure(errorMessage(cause)))
+                        .finally(() => setSnapping(null))
+                    }}
+                    disabled={disabled || pictures !== 'ready' || snapping !== null}
+                    aria-label={`Take a picture for ${symbol.name}`}
+                    title={pictureHint}
+                    className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {snapping === symbol.id ? (
+                      <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+                    ) : (
+                      <Camera className="size-3.5" aria-hidden="true" />
+                    )}
                   </button>
 
                   <button
@@ -557,10 +685,17 @@ function SymbolPanel({
                     }}
                   />
                 ) : (
-                  <p className="px-2.5 pt-1 font-mono text-[0.6875rem] text-muted-foreground">
-                    types {JSON.stringify(outputPreview(symbol))}
-                    {symbol.views.length > 0 &&
-                      ` · ${symbol.views.map((v) => `${v.view} ${v.samples}`).join(' · ')}`}
+                  <p className="flex items-center gap-1.5 px-2.5 pt-1 font-mono text-[0.6875rem] text-muted-foreground">
+                    <span>
+                      types {JSON.stringify(outputPreview(symbol))}
+                      {symbol.views.length > 0 &&
+                        ` · ${symbol.views.map((v) => `${v.view} ${v.samples}`).join(' · ')}`}
+                    </span>
+                    {symbol.has_image ? (
+                      <Images className="size-3 text-primary" aria-label="Has a photo" />
+                    ) : symbol.sample_count > 0 ? (
+                      <Images className="size-3 opacity-40" aria-label="Shown as a hand skeleton until a photo is taken" />
+                    ) : null}
                   </p>
                 )}
               </li>
@@ -643,6 +778,26 @@ function OutputEditor({
   )
 }
 
+// ------------------------------------------------------------------ snapshot --
+
+const SNAPSHOT_MAX_PX = 320
+
+/** The preview canvas, shrunk to a thumbnail and encoded for putSymbolImage. */
+async function snapshot(
+  canvas: HTMLCanvasElement,
+): Promise<{ mime: string; base64: string; width: number; height: number } | null> {
+  if (!canvas.width || !canvas.height) return null
+  const scale = Math.min(1, SNAPSHOT_MAX_PX / Math.max(canvas.width, canvas.height))
+  const small = document.createElement('canvas')
+  small.width = Math.round(canvas.width * scale)
+  small.height = Math.round(canvas.height * scale)
+  small.getContext('2d')?.drawImage(canvas, 0, 0, small.width, small.height)
+  const dataUrl = small.toDataURL('image/jpeg', 0.82)
+  const comma = dataUrl.indexOf(',')
+  if (comma < 0) return null
+  return { mime: 'image/jpeg', base64: dataUrl.slice(comma + 1), width: small.width, height: small.height }
+}
+
 // --------------------------------------------------------------------- shell --
 
 function Shell({
@@ -678,8 +833,7 @@ function Shell({
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {action}
-          <SignTalkLockup className="hidden sm:flex" />
-        </div>
+          </div>
       </header>
 
       <div className="flex flex-1 flex-col gap-6 px-5 py-6 sm:px-8">{children}</div>

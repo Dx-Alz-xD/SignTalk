@@ -12,7 +12,7 @@ interface Crumb {
 
 interface TrainerHeaderProps {
   crumbs: Crumb[]
-  /** Status shown in the chip on the right — the camera state, mostly. */
+  /** Accepted for compatibility with callers; no longer rendered. */
   status?: string
 }
 
@@ -22,7 +22,7 @@ const menuItems = [
   { icon: Settings, label: 'Studio settings', hint: 'Soon' },
 ]
 
-export function TrainerHeader({ crumbs, status = 'Camera idle' }: TrainerHeaderProps) {
+export function TrainerHeader({ crumbs }: TrainerHeaderProps) {
   const [open, setOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
 
@@ -80,14 +80,6 @@ export function TrainerHeader({ crumbs, status = 'Camera idle' }: TrainerHeaderP
       </div>
 
       <div className="flex shrink-0 items-center gap-2.5">
-        <span className="hidden items-center gap-2 rounded-full border bg-elevated py-1 pl-2.5 pr-3 text-xs text-muted-foreground sm:flex">
-          <span className="relative flex size-2 shrink-0">
-            <span className="absolute inset-0 animate-breathe rounded-full bg-accent" />
-            <span className="relative size-2 rounded-full bg-accent" />
-          </span>
-          {status}
-        </span>
-
         <div className="relative" ref={menuRef}>
           <button
             type="button"

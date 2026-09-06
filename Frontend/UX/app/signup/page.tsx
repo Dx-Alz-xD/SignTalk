@@ -17,7 +17,7 @@ export const metadata: Metadata = {
   description,
   alternates: { canonical: '/signup' },
   openGraph: {
-    title: `${title} — SignTalk`,
+    title: `${title} · SignTalk`,
     description,
     url: '/signup',
     type: 'website',
@@ -28,7 +28,7 @@ export default function SignUpPage() {
   return (
     <>
       <PageSchema name={title} description={description} path="/signup" crumbs={crumbs} />
-      <PageShell windowTitle="SignTalk — Create account">
+      <PageShell windowTitle="Create account" variant="auth">
         <SignUpFlow crumbs={crumbs} />
       </PageShell>
     </>

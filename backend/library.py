@@ -1,4 +1,4 @@
-"""The sign library, backed by Postgres.
+"""The sign library, backed by SQL (PostgreSQL or SQLite - see db.py).
 
 Same tree the detector keeps in library.json - languages -> signs -> symbols
 -> views -> samples - except every query is scoped by owner. That scoping is
@@ -8,6 +8,9 @@ belongs to the caller.
 """
 
 from __future__ import annotations
+
+import json
+import re
 
 import numpy as np
 
@@ -29,6 +32,17 @@ MAX_SAMPLE_TARGET = 500
 
 OUTPUT_KINDS = ("text", "space", "key", "combo")
 
+# Milliseconds each picture stays up in sign-to-sign playback.
+DEFAULT_GESTURE_INTERVAL_MS = 1200
+MIN_GESTURE_INTERVAL_MS = 200
+MAX_GESTURE_INTERVAL_MS = 10000
+
+# The spoken language a sign language spells out, as a BCP-47 code.
+DEFAULT_SPOKEN_LANGUAGE = "en"
+
+IMAGE_MIMES = ("image/jpeg", "image/png", "image/webp")
+MAX_IMAGE_BYTES = 400_000
+
 
 class NotFound(Exception):
     """No such row, or it is not the caller's to touch. Same answer either way,
@@ -46,6 +60,7 @@ def list_languages(user_id) -> list:
         """
         SELECT l.id, l.name, l.description, l.source, l.visibility,
                l.hand_control, l.sample_target, l.published_at,
+               l.gesture_translation, l.gesture_interval_ms, l.spoken_language, l.tag,
                l.created_at, l.updated_at,
                (SELECT count(*) FROM signs s WHERE s.language_id = l.id) AS sign_count,
                (SELECT count(*) FROM symbols y
@@ -122,8 +137,39 @@ def create_language(user_id, name: str, description: str = "",
     )
 
 
+def _clean_tag(value) -> str:
+    tag = " ".join((value or "").split())
+    if len(tag) > 60:
+        raise ValueError("The tag is too long (60 characters max).")
+    return tag
+
+
+def _clean_spoken_language(value) -> str:
+    code = (value or DEFAULT_SPOKEN_LANGUAGE).strip().lower().replace("_", "-")
+    if not re.fullmatch(r"[a-z]{2,3}(-[a-z0-9]{2,8})?", code):
+        raise ValueError("Spoken language must be a language code such as en, hi or pt-br.")
+    return code
+
+
+def _clean_gesture_interval(value) -> int:
+    if value is None:
+        return DEFAULT_GESTURE_INTERVAL_MS
+    try:
+        interval = int(value)
+    except (TypeError, ValueError):
+        raise ValueError("Gesture interval must be a whole number of milliseconds.") from None
+    if not MIN_GESTURE_INTERVAL_MS <= interval <= MAX_GESTURE_INTERVAL_MS:
+        raise ValueError(
+            f"Gesture interval must be between {MIN_GESTURE_INTERVAL_MS} and "
+            f"{MAX_GESTURE_INTERVAL_MS} ms."
+        )
+    return interval
+
+
 def update_language(user_id, language_id, *, name=None, description=None,
-                    hand_control=None, sample_target=None) -> dict:
+                    hand_control=None, sample_target=None,
+                    gesture_translation=None, gesture_interval_ms=None,
+                    spoken_language=None, tag=None) -> dict:
     """Edit a language in place. Only the fields passed are touched."""
     current = get_language(user_id, language_id)
 
@@ -151,7 +197,11 @@ def update_language(user_id, language_id, *, name=None, description=None,
            SET name = %s,
                description = COALESCE(NULLIF(%s, ''), description),
                hand_control = %s,
-               sample_target = %s
+               sample_target = %s,
+               gesture_translation = %s,
+               gesture_interval_ms = %s,
+               spoken_language = %s,
+               tag = %s
          WHERE id = %s AND owner_id = %s
         RETURNING *
         """,
@@ -161,6 +211,13 @@ def update_language(user_id, language_id, *, name=None, description=None,
                              else current["hand_control"]),
          _clean_sample_target(sample_target if sample_target is not None
                               else current["sample_target"]),
+         bool(gesture_translation if gesture_translation is not None
+              else current["gesture_translation"]),
+         _clean_gesture_interval(gesture_interval_ms if gesture_interval_ms is not None
+                                 else current["gesture_interval_ms"]),
+         _clean_spoken_language(spoken_language if spoken_language is not None
+                                else current.get("spoken_language")),
+         _clean_tag(tag if tag is not None else current.get("tag")),
          language_id, user_id),
     )
 
@@ -237,9 +294,18 @@ def get_sign(user_id, sign_id) -> dict:
     return row
 
 
-def delete_sign(user_id, sign_id) -> None:
-    get_sign(user_id, sign_id)
+def delete_sign(user_id, sign_id) -> dict:
+    """Delete a sign (a vocabulary). When it was the language's last one, the
+    now-empty language goes too, so no hollow row lingers in every list.
+    Returns {"languageDeleted": bool, "languageId": id}."""
+    sign = get_sign(user_id, sign_id)
     db.execute("DELETE FROM signs WHERE id = %s", (sign_id,))
+    remaining = db.fetch_one("SELECT count(*) AS n FROM signs WHERE language_id = %s",
+                             (sign["language_id"],))
+    if remaining and int(remaining["n"]) == 0:
+        delete_language(user_id, sign["language_id"])
+        return {"languageDeleted": True, "languageId": sign["language_id"]}
+    return {"languageDeleted": False, "languageId": sign["language_id"]}
 
 
 # ----------------------------------------------------------------- symbols --
@@ -250,21 +316,22 @@ def list_symbols(user_id, sign_id) -> list:
         """
         SELECT y.id, y.name, y.output_kind, y.output_value,
                y.created_at, y.updated_at,
-               COALESCE(json_agg(
-                   json_build_object('view', v.view, 'samples', v.sample_count,
-                                     'spread', v.quality_spread,
-                                     'feature_version', v.feature_version)
-                   ORDER BY v.view
-               ) FILTER (WHERE v.id IS NOT NULL), '[]') AS views,
+               EXISTS (SELECT 1 FROM symbol_images i WHERE i.symbol_id = y.id) AS has_image,
+               {views} AS views,
                COALESCE(sum(v.sample_count), 0) AS sample_count
           FROM symbols y
           LEFT JOIN symbol_views v ON v.symbol_id = y.id
          WHERE y.sign_id = %s
          GROUP BY y.id
          ORDER BY y.created_at
-        """,
+        """.replace("{views}", db.dialect.views_json),
         (sign_id,),
     )
+    for row in rows:
+        # SQLite hands the aggregate back as JSON text; Postgres as a list.
+        if isinstance(row["views"], str):
+            row["views"] = json.loads(row["views"])
+        row["has_image"] = bool(row["has_image"])
     return rows
 
 
@@ -356,24 +423,23 @@ def delete_symbol(user_id, symbol_id) -> None:
 def publish_language(user_id, language_id, public: bool = True) -> dict:
     """Put a language in the community database, or take it back out.
 
-    Publishing is refused for a language with nothing in it: the browse list is
-    a shelf of usable vocabularies, not a list of empty intentions.
+    Publishing runs the security review first and is refused while anything
+    blocking is found - a language other people will install must not carry
+    keystrokes that could hurt them or text that is not text. An untrained
+    language may be published (it shows its sample count on the shelf and
+    fills in as its owner trains it), so sharing can be switched on the moment
+    a language is created.
     """
     get_language(user_id, language_id)
 
     if public:
-        stored = db.fetch_one(
-            """
-            SELECT COALESCE(sum(v.sample_count), 0) AS samples
-              FROM symbol_views v
-              JOIN symbols y ON y.id = v.symbol_id
-              JOIN signs s ON s.id = y.sign_id
-             WHERE s.language_id = %s
-            """,
-            (language_id,),
-        )
-        if not stored or stored["samples"] == 0:
-            raise ValueError("Record some samples before publishing this language.")
+        review = review_language(user_id, language_id)
+        if not review["ok"]:
+            raise ValueError(
+                "This language cannot be published yet: "
+                + " ".join(issue["message"] for issue in review["issues"]
+                           if issue["level"] == "block")
+            )
 
     return db.fetch_one(
         """
@@ -398,9 +464,10 @@ def list_published(user_id=None, query: str = "") -> list:
     """
     search = (query or "").strip()
     term = f"%{search}%"
-    return db.fetch_all(
+    rows = db.fetch_all(
         """
         SELECT l.id, l.name, l.description, l.hand_control, l.published_at,
+               l.gesture_translation, l.source, l.spoken_language, l.tag,
                u.username AS author,
                (l.owner_id = %s) AS mine,
                EXISTS (SELECT 1 FROM language_installs i
@@ -418,11 +485,16 @@ def list_published(user_id=None, query: str = "") -> list:
           FROM languages l
           LEFT JOIN users u ON u.id = l.owner_id
          WHERE l.visibility = 'public'
-           AND (%s = '' OR l.name ILIKE %s OR COALESCE(u.username, '') ILIKE %s)
+           AND (%s = '' OR l.name {like} %s OR COALESCE(u.username, '') {like} %s)
          ORDER BY l.published_at DESC
-        """,
+        """.replace("{like}", db.dialect.ilike),
         (user_id, user_id, search, term, term),
     )
+    for row in rows:
+        row["mine"] = bool(row["mine"])
+        row["installed"] = bool(row["installed"])
+        row["gesture_translation"] = bool(row["gesture_translation"])
+    return rows
 
 
 def install_language(user_id, language_id) -> dict:
@@ -456,63 +528,83 @@ def install_language(user_id, language_id) -> dict:
                 name = candidate
                 break
 
-    with db.pool().connection() as conn:
-        with conn.transaction():
-            copy = conn.execute(
-                """
-                INSERT INTO languages (owner_id, name, description, source,
-                                       hand_control, sample_target, forked_from_id)
-                VALUES (%s, %s, %s, 'imported', %s, %s, %s)
-                RETURNING *
-                """,
-                (user_id, name, source["description"], source["hand_control"],
-                 source["sample_target"], source["id"]),
-            ).fetchone()
+    with db.transaction() as tx:
+        copy = tx.fetch_one(
+            """
+            INSERT INTO languages (owner_id, name, description, source,
+                                   hand_control, sample_target, forked_from_id,
+                                   gesture_translation, gesture_interval_ms,
+                                   spoken_language, tag)
+            VALUES (%s, %s, %s, 'imported', %s, %s, %s, %s, %s, %s, %s)
+            RETURNING *
+            """,
+            (user_id, name, source["description"], source["hand_control"],
+             source["sample_target"], source["id"],
+             bool(source["gesture_translation"]), source["gesture_interval_ms"],
+             source.get("spoken_language") or DEFAULT_SPOKEN_LANGUAGE,
+             source.get("tag") or ""),
+        )
+        with_images = bool(source["gesture_translation"])
 
-            # One statement per level rather than a row-by-row walk: the
-            # RETURNING gives back the new ids, and the join carries the
-            # mapping down to the next level.
-            conn.execute(
+        # Walk the tree level by level, carrying the old->new id mapping down.
+        # Plain statements rather than a Postgres-only INSERT ... CTE, so the
+        # same code runs on SQLite; a language is small enough that the extra
+        # round trips do not matter.
+        for sign in tx.fetch_all(
+            "SELECT * FROM signs WHERE language_id = %s ORDER BY created_at",
+            (source["id"],),
+        ):
+            new_sign = tx.fetch_one(
                 """
-                WITH copied AS (
-                    INSERT INTO signs (language_id, name, has_phrases, phrases)
-                    SELECT %s, name, has_phrases, phrases FROM signs
-                     WHERE language_id = %s
-                    RETURNING id, name
+                INSERT INTO signs (language_id, name, has_phrases, phrases)
+                VALUES (%s, %s, %s, %s)
+                RETURNING id
+                """,
+                (copy["id"], sign["name"], bool(sign["has_phrases"]),
+                 list(sign["phrases"] or [])),
+            )
+            for symbol in tx.fetch_all(
+                "SELECT * FROM symbols WHERE sign_id = %s ORDER BY created_at",
+                (sign["id"],),
+            ):
+                new_symbol = tx.fetch_one(
+                    """
+                    INSERT INTO symbols (sign_id, name, output_kind, output_value)
+                    VALUES (%s, %s, %s, %s)
+                    RETURNING id
+                    """,
+                    (new_sign["id"], symbol["name"], symbol["output_kind"],
+                     symbol["output_value"]),
                 )
-                INSERT INTO symbols (sign_id, name, output_kind, output_value)
-                SELECT c.id, y.name, y.output_kind, y.output_value
-                  FROM symbols y
-                  JOIN signs s ON s.id = y.sign_id
-                  JOIN copied c ON lower(c.name) = lower(s.name)
-                 WHERE s.language_id = %s
-                """,
-                (copy["id"], source["id"], source["id"]),
-            )
+                tx.execute(
+                    """
+                    INSERT INTO symbol_views (symbol_id, view, sample_count, landmarks,
+                                              features, feature_version, quality_spread)
+                    SELECT %s, view, sample_count, landmarks,
+                           features, feature_version, quality_spread
+                      FROM symbol_views WHERE symbol_id = %s
+                    """,
+                    (new_symbol["id"], symbol["id"]),
+                )
+                # The reference pictures travel only when the publisher opted
+                # into gesture translation - that is what the flag means.
+                if with_images:
+                    tx.execute(
+                        """
+                        INSERT INTO symbol_images (symbol_id, mime, image, width, height)
+                        SELECT %s, mime, image, width, height
+                          FROM symbol_images WHERE symbol_id = %s
+                        """,
+                        (new_symbol["id"], symbol["id"]),
+                    )
 
-            conn.execute(
-                """
-                INSERT INTO symbol_views (symbol_id, view, sample_count, landmarks,
-                                          features, feature_version, quality_spread)
-                SELECT ny.id, v.view, v.sample_count, v.landmarks,
-                       v.features, v.feature_version, v.quality_spread
-                  FROM symbol_views v
-                  JOIN symbols y  ON y.id = v.symbol_id
-                  JOIN signs s    ON s.id = y.sign_id
-                  JOIN signs ns   ON ns.language_id = %s AND lower(ns.name) = lower(s.name)
-                  JOIN symbols ny ON ny.sign_id = ns.id AND lower(ny.name) = lower(y.name)
-                 WHERE s.language_id = %s
-                """,
-                (copy["id"], source["id"]),
-            )
-
-            conn.execute(
-                """
-                INSERT INTO language_installs (user_id, language_id)
-                VALUES (%s, %s) ON CONFLICT DO NOTHING
-                """,
-                (user_id, source["id"]),
-            )
+        tx.execute(
+            """
+            INSERT INTO language_installs (user_id, language_id)
+            VALUES (%s, %s) ON CONFLICT DO NOTHING
+            """,
+            (user_id, source["id"]),
+        )
 
     return dict(copy)
 
@@ -599,8 +691,12 @@ def describe_quality(spread: float) -> str:
 
 # ---------------------------------------------------------------- training --
 
-def training_set(user_id, language_id=None):
-    """(labels, views, matrix, meta, stale) for everything in scope."""
+def training_set(user_id, language_id=None, sign_id=None):
+    """(labels, views, matrix, meta, stale) for everything in scope.
+
+    Scope is the whole library, one language, or one sign (a vocabulary) -
+    the translator offers all three.
+    """
     rows = db.fetch_all(
         """
         SELECT v.sample_count, v.features, v.feature_version, v.view,
@@ -611,9 +707,10 @@ def training_set(user_id, language_id=None):
           JOIN signs s     ON s.id = y.sign_id
           JOIN languages l ON l.id = s.language_id
          WHERE l.owner_id = %s
-           AND (%s::uuid IS NULL OR l.id = %s::uuid)
-        """,
-        (user_id, language_id, language_id),
+           AND ({uuid} IS NULL OR l.id = {uuid})
+           AND ({uuid} IS NULL OR s.id = {uuid})
+        """.replace("{uuid}", db.dialect.uuid_param),
+        (user_id, language_id, language_id, sign_id, sign_id),
     )
 
     labels, views, blocks, meta = [], [], [], {}
@@ -642,8 +739,8 @@ def training_set(user_id, language_id=None):
     return labels, views, stacked, meta, stale
 
 
-def build_classifier(user_id, language_id=None) -> KNNClassifier:
-    labels, views, matrix, meta, stale = training_set(user_id, language_id)
+def build_classifier(user_id, language_id=None, sign_id=None) -> KNNClassifier:
+    labels, views, matrix, meta, stale = training_set(user_id, language_id, sign_id)
     model = KNNClassifier(labels, matrix, meta, views)
     model.stale = stale
     return model
@@ -663,8 +760,8 @@ def refresh_stale_features(user_id) -> int:
           JOIN signs s     ON s.id = y.sign_id
           JOIN languages l ON l.id = s.language_id
          WHERE l.owner_id = %s
-           AND (v.feature_version IS DISTINCT FROM %s OR v.features IS NULL)
-        """,
+           AND (v.feature_version {distinct} %s OR v.features IS NULL)
+        """.replace("{distinct}", db.dialect.is_distinct_from),
         (user_id, F.FEATURE_VERSION),
     )
 
@@ -683,3 +780,359 @@ def refresh_stale_features(user_id) -> int:
         )
         fixed += 1
     return fixed
+
+
+# ----------------------------------------------------------------- images --
+# One reference picture per symbol, for sign-to-sign translation. The only
+# place SignTalk keeps pixels, so: opt-in per language, thumbnail-sized, and
+# the bytes are checked to actually be an image before they are stored.
+
+_MAGIC = (
+    ("image/jpeg", b"\xff\xd8\xff"),
+    ("image/png", b"\x89PNG\r\n\x1a\n"),
+    ("image/webp", b"RIFF"),
+)
+
+
+def sniff_image(data: bytes) -> str | None:
+    for mime, magic in _MAGIC:
+        if data.startswith(magic):
+            if mime == "image/webp" and data[8:12] != b"WEBP":
+                continue
+            return mime
+    return None
+
+
+def set_symbol_image(user_id, symbol_id, data: bytes, mime: str | None = None,
+                     width=None, height=None) -> dict:
+    symbol = get_symbol(user_id, symbol_id)
+    language = get_language(user_id, symbol["language_id"])
+    if not language["gesture_translation"]:
+        raise ValueError("Enable gesture translation on this language before storing pictures.")
+    if not data:
+        raise ValueError("The picture is empty.")
+    if len(data) > MAX_IMAGE_BYTES:
+        raise ValueError(f"The picture is too large ({len(data)} bytes; max {MAX_IMAGE_BYTES}).")
+    detected = sniff_image(data)
+    if detected is None or (mime and mime != detected):
+        raise ValueError("That is not a JPEG, PNG or WebP image.")
+    row = db.fetch_one(
+        """
+        INSERT INTO symbol_images (symbol_id, mime, image, width, height)
+        VALUES (%s, %s, %s, %s, %s)
+        ON CONFLICT (symbol_id) DO UPDATE
+            SET mime = EXCLUDED.mime, image = EXCLUDED.image,
+                width = EXCLUDED.width, height = EXCLUDED.height,
+                updated_at = now()
+        RETURNING symbol_id, mime, width, height, updated_at
+        """,
+        (symbol_id, detected, data, width, height),
+    )
+    return dict(row)
+
+
+def get_symbol_image(user_id, symbol_id) -> dict | None:
+    """The picture, or None when there is nothing to show at all.
+
+    A stored photo wins. Without one, the symbol's hand skeleton is drawn from
+    a stored sample - every trained symbol has landmarks, and a skeleton is
+    not a picture of anyone, so it needs no opt-in. That covers symbols
+    trained before pictures existed, imported datasets, and installed copies
+    whose publisher kept gesture translation off.
+    """
+    get_symbol(user_id, symbol_id)
+    row = db.fetch_one(
+        "SELECT mime, image, width, height, updated_at FROM symbol_images WHERE symbol_id = %s",
+        (symbol_id,),
+    )
+    if row is not None:
+        row["image"] = bytes(row["image"])
+        row["generated"] = False
+        return row
+
+    view = db.fetch_one(
+        """
+        SELECT sample_count, landmarks FROM symbol_views
+         WHERE symbol_id = %s
+         ORDER BY CASE WHEN lower(view) = 'front' THEN 0 ELSE 1 END, sample_count DESC
+         LIMIT 1
+        """,
+        (symbol_id,),
+    )
+    if view is None or not view["sample_count"]:
+        return None
+    matrix = landmarks.from_blob(bytes(view["landmarks"]), view["sample_count"],
+                                 landmarks.LANDMARK_SIZE)
+    # The middle sample of a steady hold is as typical as any.
+    png = render_skeleton(matrix[len(matrix) // 2])
+    if png is None:
+        return None
+    return {"mime": "image/png", "image": png, "width": SKELETON_PX, "height": SKELETON_PX,
+            "updated_at": None, "generated": True}
+
+
+SKELETON_PX = 320
+
+
+def render_skeleton(row) -> bytes | None:
+    """One landmark row (126 floats) -> PNG of the hand skeleton.
+
+    Same bones and colouring as the live preview, fitted into a square with
+    some margin. Both hands are drawn when both were recorded.
+    """
+    import io
+
+    try:
+        from PIL import Image, ImageDraw
+    except ImportError:
+        # Pillow is in requirements, but a partial install must degrade to
+        # "no picture" rather than failing the request.
+        return None
+
+    from detector.tracker import HAND_CONNECTIONS
+
+    frame = landmarks.unpack_landmarks(row)
+    points = [(x, y) for hand in frame.hands for (x, y, _z) in hand.landmarks]
+    if not points:
+        return None
+
+    xs, ys = zip(*points)
+    span = max(max(xs) - min(xs), max(ys) - min(ys), 1e-3)
+    margin = SKELETON_PX * 0.14
+    scale = (SKELETON_PX - 2 * margin) / span
+    # Centre the drawing along the shorter axis.
+    offset_x = margin + ((span - (max(xs) - min(xs))) * scale) / 2
+    offset_y = margin + ((span - (max(ys) - min(ys))) * scale) / 2
+
+    def place(x, y):
+        return (offset_x + (x - min(xs)) * scale, offset_y + (y - min(ys)) * scale)
+
+    image = Image.new("RGB", (SKELETON_PX, SKELETON_PX), (26, 22, 23))
+    draw = ImageDraw.Draw(image)
+    for hand in frame.hands:
+        pts = [place(x, y) for (x, y, _z) in hand.landmarks]
+        for a, b in HAND_CONNECTIONS:
+            draw.line([pts[a], pts[b]], fill=(238, 236, 236), width=4)
+        dot = (226, 70, 70) if hand.label == "Right" else (245, 190, 84)
+        for index, (px, py) in enumerate(pts):
+            radius = 6 if index in (4, 8, 12, 16, 20) else 4
+            draw.ellipse([px - radius, py - radius, px + radius, py + radius], fill=dot)
+
+    buffer = io.BytesIO()
+    image.save(buffer, "PNG", optimize=True)
+    return buffer.getvalue()
+
+
+def delete_symbol_image(user_id, symbol_id) -> None:
+    get_symbol(user_id, symbol_id)
+    db.execute("DELETE FROM symbol_images WHERE symbol_id = %s", (symbol_id,))
+
+
+# --------------------------------------------------------------- security --
+# What gets checked before a language reaches the community shelf. Installing
+# a language copies its symbols' *outputs* into someone else's Direct Paste,
+# so a key or shortcut that could do damage on their machine is the thing to
+# stop; the rest is hygiene for text other people will read.
+
+# Keys a symbol may press. Editing keys and navigation only - nothing that
+# switches windows, opens menus or reaches the OS.
+SAFE_KEYS = frozenset({
+    "enter", "return", "backspace", "tab", "space", "delete", "del",
+    "escape", "esc", "home", "end", "pageup", "pagedown", "page up", "page down",
+    "up", "down", "left", "right", "arrowup", "arrowdown", "arrowleft", "arrowright",
+    "shift", "capslock", "caps lock",
+})
+
+# Shortcuts a symbol may send. Clipboard and undo, and line breaks.
+SAFE_COMBOS = frozenset({
+    "ctrl+c", "ctrl+v", "ctrl+x", "ctrl+z", "ctrl+y", "ctrl+a",
+    "cmd+c", "cmd+v", "cmd+x", "cmd+z", "cmd+a",
+    "shift+enter", "ctrl+enter", "ctrl+backspace", "ctrl+shift+z",
+})
+
+MAX_TEXT_OUTPUT = 200
+_URL_RE = re.compile(r"(https?://|www\.)", re.IGNORECASE)
+_HTML_RE = re.compile(r"<[^>]+>")
+_CONTROL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+
+
+def _text_issues(where: str, value: str | None, *, allow_urls: bool) -> list:
+    issues = []
+    if not value:
+        return issues
+    if _CONTROL_RE.search(value):
+        issues.append(_issue("block", "control_chars",
+                             f"{where} contains control characters."))
+    if _HTML_RE.search(value):
+        issues.append(_issue("block", "markup", f"{where} contains HTML-like markup."))
+    if not allow_urls and _URL_RE.search(value):
+        issues.append(_issue("warn", "link", f"{where} contains a link."))
+    return issues
+
+
+def _issue(level: str, code: str, message: str) -> dict:
+    return {"level": level, "code": code, "message": message}
+
+
+def review_language(user_id, language_id) -> dict:
+    """Security and quality review of a language, as it would be installed.
+
+    Returns {"ok", "issues": [{level, code, message}], "summary": {...}}.
+    `ok` is False when anything is level "block"; warnings never stop a
+    publish, they are shown to the owner.
+    """
+    language = get_language(user_id, language_id)
+    issues: list = []
+
+    issues += _text_issues("The language name", language["name"], allow_urls=False)
+    issues += _text_issues("The description", language.get("description"), allow_urls=True)
+
+    signs = db.fetch_all(
+        "SELECT id, name, phrases FROM signs WHERE language_id = %s", (language_id,))
+    symbols = db.fetch_all(
+        """
+        SELECT y.id, y.name, y.output_kind, y.output_value, s.name AS sign_name
+          FROM symbols y JOIN signs s ON s.id = y.sign_id
+         WHERE s.language_id = %s
+        """,
+        (language_id,),
+    )
+    views = db.fetch_all(
+        """
+        SELECT v.id, v.view, v.sample_count, v.landmarks, y.name AS symbol_name
+          FROM symbol_views v
+          JOIN symbols y ON y.id = v.symbol_id
+          JOIN signs s   ON s.id = y.sign_id
+         WHERE s.language_id = %s
+        """,
+        (language_id,),
+    )
+
+    for sign in signs:
+        issues += _text_issues(f"The sign name '{sign['name']}'", sign["name"], allow_urls=False)
+        for phrase in sign["phrases"] or []:
+            issues += _text_issues(f"A phrase in '{sign['name']}'", phrase, allow_urls=False)
+
+    for symbol in symbols:
+        label = f"'{symbol['sign_name']} / {symbol['name']}'"
+        issues += _text_issues(f"The symbol name {label}", symbol["name"], allow_urls=False)
+        kind = symbol["output_kind"]
+        value = (symbol["output_value"] or "").strip()
+        if kind == "text":
+            issues += _text_issues(f"The text {label} types", value, allow_urls=False)
+            if len(value) > MAX_TEXT_OUTPUT:
+                issues.append(_issue("block", "output_length",
+                                     f"The text {label} types is longer than {MAX_TEXT_OUTPUT} characters."))
+        elif kind == "key":
+            if value.lower() not in SAFE_KEYS:
+                issues.append(_issue(
+                    "block", "unsafe_key",
+                    f"{label} presses '{value}', which is not an editing key. Only editing "
+                    f"and navigation keys can be shared, so an installed language cannot "
+                    f"reach another person's system."))
+        elif kind == "combo":
+            if value.lower().replace(" ", "") not in SAFE_COMBOS:
+                issues.append(_issue(
+                    "block", "unsafe_combo",
+                    f"{label} sends the shortcut '{value}'. Only clipboard, undo and "
+                    f"line-break shortcuts can be shared."))
+
+    total_samples = 0
+    for view in views:
+        total_samples += view["sample_count"]
+        blob = bytes(view["landmarks"])
+        expected = view["sample_count"] * landmarks.LANDMARK_SIZE * 4
+        if len(blob) != expected:
+            issues.append(_issue("block", "blob_size",
+                                 f"Samples for '{view['symbol_name']}' ({view['view']}) are corrupt."))
+            continue
+        matrix = landmarks.from_blob(blob, view["sample_count"], landmarks.LANDMARK_SIZE)
+        if not np.all(np.isfinite(matrix)):
+            issues.append(_issue("block", "blob_values",
+                                 f"Samples for '{view['symbol_name']}' ({view['view']}) contain invalid numbers."))
+        elif matrix.min() < -1.0 or matrix.max() > 2.0:
+            # Normalised image coordinates; anything far outside is not a hand.
+            issues.append(_issue("block", "blob_range",
+                                 f"Samples for '{view['symbol_name']}' ({view['view']}) are not hand landmarks."))
+        if view["sample_count"] > 5000:
+            issues.append(_issue("warn", "view_size",
+                                 f"'{view['symbol_name']}' ({view['view']}) holds a very large sample set."))
+
+    if not symbols:
+        issues.append(_issue("warn", "empty", "This language has no symbols yet."))
+    elif total_samples == 0:
+        issues.append(_issue("warn", "untrained",
+                             "Nothing is trained yet - it will appear on the shelf with 0 samples "
+                             "until you record some."))
+
+    return {
+        "ok": not any(issue["level"] == "block" for issue in issues),
+        "issues": issues,
+        "summary": {
+            "signs": len(signs),
+            "symbols": len(symbols),
+            "samples": int(total_samples),
+            "gesture_translation": bool(language["gesture_translation"]),
+        },
+    }
+
+
+# --------------------------------------------------------------- profiles --
+
+def published_by(owner_id) -> list:
+    """Every public language one account has put on the shelf."""
+    return db.fetch_all(
+        "SELECT id, name FROM languages WHERE owner_id = %s AND visibility = 'public' "
+        "ORDER BY published_at",
+        (owner_id,),
+    )
+
+
+def public_profile(username: str, viewer_id=None) -> dict:
+    """What anyone signed in may see about an account: name, when it joined,
+    and what it has published. Email and phone are never part of this."""
+    user = db.fetch_one(
+        f"""
+        SELECT id, {db.dialect.text('username')} AS username, created_at
+          FROM users WHERE username = %s AND deleted_at IS NULL
+        """,
+        (username.strip(),),
+    )
+    if user is None:
+        raise NotFound("No such user.")
+
+    languages = db.fetch_all(
+        """
+        SELECT l.id, l.name, l.description, l.hand_control, l.published_at,
+               l.gesture_translation, l.source, l.spoken_language, l.tag,
+               (l.owner_id = %s) AS mine,
+               EXISTS (SELECT 1 FROM language_installs i
+                        WHERE i.language_id = l.id AND i.user_id = %s) AS installed,
+               (SELECT count(*) FROM signs s WHERE s.language_id = l.id) AS sign_count,
+               (SELECT count(*) FROM symbols y
+                  JOIN signs s2 ON s2.id = y.sign_id
+                 WHERE s2.language_id = l.id) AS symbol_count,
+               COALESCE((SELECT sum(v.sample_count) FROM symbol_views v
+                  JOIN symbols y2 ON y2.id = v.symbol_id
+                  JOIN signs s3 ON s3.id = y2.sign_id
+                 WHERE s3.language_id = l.id), 0) AS sample_count,
+               (SELECT count(*) FROM language_installs i2
+                 WHERE i2.language_id = l.id) AS install_count
+          FROM languages l
+         WHERE l.owner_id = %s AND l.visibility = 'public'
+         ORDER BY l.published_at DESC
+        """,
+        (viewer_id, viewer_id, user["id"]),
+    )
+    for row in languages:
+        row["mine"] = bool(row["mine"])
+        row["installed"] = bool(row["installed"])
+        row["gesture_translation"] = bool(row["gesture_translation"])
+
+    return {
+        "username": user["username"],
+        "joined_at": user["created_at"],
+        "languages": languages,
+        "published_count": len(languages),
+        "install_count": int(sum(row["install_count"] for row in languages)),
+    }

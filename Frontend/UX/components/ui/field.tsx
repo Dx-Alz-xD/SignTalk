@@ -10,7 +10,7 @@ import { passwordRules, passwordStrength } from '@/lib/validation'
 type FieldShellProps = {
   id: string
   label: ReactNode
-  /** Rendered on the label row, right-aligned — e.g. a "Forgot?" link. */
+  /** Rendered on the label row, right-aligned, e.g. a "Forgot?" link. */
   action?: ReactNode
   hint?: ReactNode
   error?: string | null
@@ -186,7 +186,7 @@ export function PasswordField({
                 value ? tone.text : 'text-muted-foreground/60',
               )}
             >
-              {value ? strength.label : '—'}
+              {value ? strength.label : ''}
             </span>
           </div>
 

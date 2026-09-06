@@ -4,7 +4,7 @@
  * Translation for the interpreter's transcript.
  *
  * Prefers the browser's own on-device Translator and LanguageDetector, which
- * cost nothing, need no key and keep the text on the machine — the same
+ * cost nothing, need no key and keep the text on the machine, the same
  * privacy story as the landmarks never leaving the device. Where those are not
  * available (they are Chromium-only, and behind a model download), it falls
  * back to a LibreTranslate-compatible endpoint if one is configured, and
@@ -20,8 +20,12 @@ const ENDPOINT = process.env.NEXT_PUBLIC_TRANSLATE_URL ?? ''
 
 export type Translation = {
   text: string
-  /** Whichever engine produced it, for the on-screen note. */
-  engine: 'browser' | 'api' | 'none'
+  /**
+   * Whichever engine produced it, for the on-screen note. 'same' means the
+   * text was already in the target language, so there was nothing to do;
+   * 'none' means no engine could handle the pair and this is the original.
+   */
+  engine: 'browser' | 'api' | 'same' | 'none'
   /** The language the source text was detected as, when we could tell. */
   detected?: string
 }
@@ -60,7 +64,7 @@ export function browserTranslationSupported(): boolean {
   return browserTranslator() !== null
 }
 
-/** True when translation is possible at all — built-in or configured API. */
+/** True when translation is possible at all, built-in or configured API. */
 export function translationAvailable(): boolean {
   return browserTranslationSupported() || ENDPOINT !== ''
 }
@@ -69,7 +73,7 @@ export function translationAvailable(): boolean {
  * The language the text looks like, as a BCP-47 code.
  *
  * Used to fill the "from" side when the user has not said what their signs
- * spell out — the transcript is plain text by that point, so this is the same
+ * spell out, the transcript is plain text by that point, so this is the same
  * question any translator asks.
  */
 export async function detectLanguage(text: string): Promise<string | null> {
@@ -93,7 +97,7 @@ export async function detectLanguage(text: string): Promise<string | null> {
 /**
  * Translates `text` into `target`.
  *
- * `source` may be omitted, in which case the language is detected first — both
+ * `source` may be omitted, in which case the language is detected first, both
  * engines want an explicit source, so this is where "detect, then translate"
  * actually happens.
  */
@@ -108,14 +112,14 @@ export async function translate(
   const detected = source ?? (await detectLanguage(trimmed)) ?? undefined
   const from = detected ?? 'en'
 
-  if (from === target) return { text: trimmed, engine: 'none', detected }
+  if (from === target) return { text: trimmed, engine: 'same', detected }
 
   const engine = browserTranslator()
   if (engine) {
     try {
       const state = await engine.availability({ sourceLanguage: from, targetLanguage: target })
       if (state !== 'unavailable') {
-        // 'downloadable' still resolves — create() fetches the model, which is
+        // 'downloadable' still resolves, create() fetches the model, which is
         // slow the first time and instant afterwards.
         const instance = await engine.create({ sourceLanguage: from, targetLanguage: target })
         return { text: await instance.translate(trimmed), engine: 'browser', detected }

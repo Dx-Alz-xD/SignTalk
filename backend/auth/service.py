@@ -317,6 +317,37 @@ class AuthService:
         self._burn_ticket(ticket)
         return self._start_session(user, method="recovery_code")
 
+    # --- password change (signed in) ----------------------------------------
+
+    def change_password(self, token: str, current_password: str,
+                        new_password: str) -> Session:
+        """Set a new password from inside a live session.
+
+        Proving the current password is what separates this from a recovery
+        reset - a session that was hijacked does not get to lock the owner
+        out. Every other session is revoked and a fresh one is issued for the
+        caller, so the browser that made the change stays signed in and every
+        other one does not.
+        """
+        session = self.resolve_session(token)
+        user = self.store.get_user_by_email(session.email)
+        if user is None:
+            raise InvalidCredentialsError("That account no longer exists.")
+        if not security.verify_password(current_password, user.password_hash):
+            self._register_failure(user)
+            raise InvalidCredentialsError("Your current password is not right.")
+        if len(new_password) < security.MIN_PASSWORD_LENGTH:
+            raise ValidationError(
+                f"Password must be at least {security.MIN_PASSWORD_LENGTH} characters."
+            )
+        if security.verify_password(new_password, user.password_hash):
+            raise ValidationError("New password must be different from the old one.")
+
+        user.password_hash = security.hash_password(new_password)
+        self.store.persist_user(user)
+        self.store.drop_sessions_for(user.email)
+        return self._start_session(user, method="password")
+
     # --- sessions -----------------------------------------------------------
 
     def _start_session(self, user: User, *, method: str) -> Session:
@@ -354,6 +385,16 @@ class AuthService:
         if session.is_expired:
             self.store.drop_session(token)
             raise SessionError("Your session expired. Sign in again.")
+
+        # Sliding expiry: using the app keeps you signed in, which is what
+        # "30 minutes of inactivity" means and what the sign-in page promises.
+        # Only rewritten past the halfway mark, so an active session is not a
+        # write on every request.
+        remaining = (session.expires_at - utcnow()).total_seconds()
+        if remaining < self.SESSION_TTL_MINUTES * 30:      # half the TTL, in seconds
+            session.expires_at = utcnow() + timedelta(minutes=self.SESSION_TTL_MINUTES)
+            self.store.extend_session(token, session.expires_at)
+
         self.store.touch_session(token)
         return session
 

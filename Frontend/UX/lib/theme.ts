@@ -8,11 +8,25 @@ function systemTheme(): 'light' | 'dark' {
   return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
 }
 
-function apply(theme: Theme) {
+/**
+ * Put a theme on the page. Exported because the account's own setting arrives
+ * after the inline bootstrap script has already applied this device's, and it
+ * has to win.
+ */
+export function applyTheme(theme: Theme) {
   const resolved = theme === 'system' ? systemTheme() : theme
   document.documentElement.classList.toggle('dark', resolved === 'dark')
   document.documentElement.style.colorScheme = resolved
+  try {
+    localStorage.setItem(THEME_STORAGE_KEY, theme)
+  } catch {
+    // Private mode: it applies for this page load either way.
+  }
 }
+
+const apply = applyTheme
+
+export type { Theme }
 
 /**
  * Reads the theme the inline bootstrap script already applied, so the first

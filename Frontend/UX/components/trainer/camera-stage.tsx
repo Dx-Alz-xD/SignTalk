@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { HandTracker, HAND_CONNECTIONS, type HandSample } from '@/lib/hand-tracker'
+import { usePreferences } from '@/components/session'
 
 export type CameraState = 'off' | 'starting' | 'live' | 'failed'
 
@@ -10,7 +11,7 @@ export type CameraState = 'off' | 'starting' | 'live' | 'failed'
  *
  * Everything downstream is landmarks, so this is the only place that touches a
  * pixel. The frame is drawn mirrored into a canvas and *that canvas* is what
- * gets tracked — see the note in lib/hand-tracker.ts for why the mirror has to
+ * gets tracked, see the note in lib/hand-tracker.ts for why the mirror has to
  * happen before tracking rather than in CSS.
  */
 export function useCameraStage({
@@ -27,10 +28,25 @@ export function useCameraStage({
   const [error, setError] = useState<string | null>(null)
   const [fps, setFps] = useState(0)
 
+  const { cameraDeviceId, mirrorPreview, showSkeleton } = usePreferences()
+
   // The loop reads these through refs so that changing the callback does not
   // tear down and restart the camera.
   const onFrameRef = useRef(onFrame)
   onFrameRef.current = onFrame
+  const skeletonRef = useRef(showSkeleton)
+  skeletonRef.current = showSkeleton
+
+  /**
+   * The tracked canvas is always mirrored, because the models were trained on
+   * a mirrored image and un-mirroring it would move every landmark into a
+   * space they have never seen. Someone who prefers an unmirrored preview gets
+   * the *display* flipped back with a transform, which the tracker never sees.
+   */
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (canvas) canvas.style.transform = mirrorPreview ? '' : 'scaleX(-1)'
+  }, [mirrorPreview, state])
 
   useEffect(() => {
     if (!active) {
@@ -50,7 +66,13 @@ export function useCameraStage({
       setError(null)
       try {
         stream = await navigator.mediaDevices.getUserMedia({
-          video: { width: { ideal: 960 }, height: { ideal: 540 }, facingMode: 'user' },
+          video: {
+            width: { ideal: 960 },
+            height: { ideal: 540 },
+            // A chosen camera is a request, not a demand: an unplugged one
+            // must fall back rather than fail the whole session.
+            ...(cameraDeviceId ? { deviceId: { ideal: cameraDeviceId } } : { facingMode: 'user' }),
+          },
           audio: false,
         })
         if (stopped) return
@@ -99,7 +121,7 @@ export function useCameraStage({
       context.restore()
 
       const hands = tracker.detect(canvas, performance.now())
-      drawSkeleton(context, hands, width, height)
+      if (skeletonRef.current) drawSkeleton(context, hands, width, height)
       onFrameRef.current(hands)
 
       const now = performance.now()
@@ -121,7 +143,7 @@ export function useCameraStage({
       const video = videoRef.current
       if (video) video.srcObject = null
     }
-  }, [active])
+  }, [active, cameraDeviceId])
 
   // Retrying is just turning the camera off and on again: the effect keys on
   // `active`, so the caller's existing toggle already re-runs the whole setup.

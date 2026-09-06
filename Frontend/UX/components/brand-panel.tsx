@@ -35,6 +35,7 @@ export function BrandPanel() {
           className="rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
         >
           <SignTalkLockup
+            href="/"
             markClassName="size-7 text-[oklch(0.7_0.21_23)]"
             wordmarkClassName="text-sm text-[oklch(0.97_0.008_30)]"
             accentClassName="text-[oklch(0.7_0.21_23)]"

@@ -17,7 +17,7 @@ export const metadata: Metadata = {
   description,
   alternates: { canonical: '/forgot-password' },
   openGraph: {
-    title: `${title} — SignTalk`,
+    title: `${title} · SignTalk`,
     description,
     url: '/forgot-password',
     type: 'website',
@@ -33,7 +33,7 @@ export default function ForgotPasswordPage() {
         path="/forgot-password"
         crumbs={crumbs}
       />
-      <PageShell windowTitle="SignTalk — Reset password">
+      <PageShell windowTitle="Reset password" variant="auth">
         <ForgotPasswordFlow crumbs={crumbs} />
       </PageShell>
     </>

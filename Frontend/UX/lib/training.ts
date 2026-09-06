@@ -18,7 +18,7 @@ export type StoredView = View & {
   id: string
   sample_count: number
   quality_spread: number | null
-  /** The server's own words: "very consistent", "good", "shaky — ...". */
+  /** The server's own words: "very consistent", "good", "shaky...". */
   quality: string
 }
 
@@ -57,13 +57,20 @@ export function deleteView(symbolId: string, view: string): Promise<void> {
   }).then(() => undefined)
 }
 
+/** Which part of the library a model is built from: everything, one language, or one sign. */
+export type Scope = { languageId?: string | null; signId?: string | null }
+
+function scopeQuery(scope: Scope): string {
+  const params = new URLSearchParams()
+  if (scope.languageId) params.set('languageId', scope.languageId)
+  if (scope.signId) params.set('signId', scope.signId)
+  const query = params.toString()
+  return query ? `?${query}` : ''
+}
+
 /** What the interpreter would be working with right now. */
-export function modelStatus(
-  languageId?: string | null,
-  signal?: AbortSignal,
-): Promise<ModelStatus> {
-  const query = languageId ? `?languageId=${encodeURIComponent(languageId)}` : ''
-  return api<ModelStatus>(`/training/model${query}`, { signal })
+export function modelStatus(scope: Scope = {}, signal?: AbortSignal): Promise<ModelStatus> {
+  return api<ModelStatus>(`/training/model${scopeQuery(scope)}`, { signal })
 }
 
 /**
@@ -98,11 +105,11 @@ export type Prediction = {
  */
 export function predictFrame(
   hands: HandSample[],
-  languageId?: string | null,
+  scope: Scope = {},
   signal?: AbortSignal,
 ): Promise<{ hands: number; prediction: Prediction | null; untrained?: boolean }> {
   return api('/training/predict', {
-    body: { hands, languageId: languageId ?? null },
+    body: { hands, languageId: scope.languageId ?? null, signId: scope.signId ?? null },
     signal,
   })
 }
@@ -120,7 +127,7 @@ export function vectorDistance(a: number[], b: number[]): number {
 /**
  * Max feature distance between consecutive frames for one to count as still.
  * Mirrors STILL_THRESHOLD in detector/trainer.py, where it was calibrated
- * against the ASL dataset — keep the two in step.
+ * against the ASL dataset, keep the two in step.
  */
 export const STILL_THRESHOLD = 0.7
 

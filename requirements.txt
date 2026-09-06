@@ -1,7 +1,43 @@
-# Argon2id password hashing.
+# SignTalk backend - the API, the auth CLI and the library layer.
+#
+#   pip install -r requirements.txt
+#   python -m uvicorn backend.api.main:app --reload --port 8000
+#
+# The API needs nothing else to run: without a reachable PostgreSQL it stores
+# everything in SQLite at backend/data/signtalk.db (see backend/db.py).
+
+# Web API.
+fastapi>=0.115
+uvicorn[standard]>=0.30
+
+# Feature encoding and the kNN classifier (shared with detector/).
+numpy>=1.24
+
+# Argon2id password hashing. If missing the app still runs on PBKDF2, and
+# says so on the banner - but Argon2id is the intended algorithm.
 argon2-cffi>=23.1.0
 
 # CA bundle for outbound TLS. macOS python.org builds do not trust the system
 # keychain, so without this every real SMTP/Twilio/Textbelt call dies with
 # CERTIFICATE_VERIFY_FAILED.
 certifi>=2024.2.2
+
+# PostgreSQL driver. Optional at runtime - only used when DATABASE_URL points
+# at a Postgres server (or one is listening on localhost:5432).
+psycopg[binary,pool]>=3.1
+
+# Multipart uploads (the video translator sends audio as a file).
+python-multipart>=0.0.9
+
+# Draws a symbol's hand skeleton when it has no photo, so every trained symbol
+# has a picture. Without it those symbols simply have none.
+pillow>=10.0
+
+# Optional: speech-to-text with word timings for the video translator. CPU
+# friendly; downloads a ~150 MB model on first use. Without it the screen still
+# works from a subtitle file or a typed transcript.
+#   pip install faster-whisper
+# Optional: server-side dataset import (built-in ISL/ASL) needs the detector's
+# tracking stack:  pip install mediapipe opencv-python pillow
+
+# The camera-side detector CLI has its own, heavier list: detector/requirements.txt

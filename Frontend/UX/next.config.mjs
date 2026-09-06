@@ -1,4 +1,4 @@
-// The desktop build (app/) sets DESKTOP_BUILD=1 and needs a static export it
+// The desktop build (desktop/) sets DESKTOP_BUILD=1 and needs a static export it
 // can serve from disk. The web build is unaffected - no output key is set.
 const desktop = process.env.DESKTOP_BUILD === '1'
 

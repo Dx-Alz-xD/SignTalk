@@ -27,12 +27,20 @@ from ..auth import (
     ValidationError,
 )
 from ..config import load_env_file
-from . import routes_auth, routes_library, routes_training
+from . import (routes_auth, routes_library, routes_preferences, routes_training,
+               routes_users, routes_video)
 
 load_env_file()
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    # Pick the database now rather than on the first request, so a misconfigured
+    # DATABASE_URL fails at startup where someone is watching the terminal.
+    print(f"  [db] {db.describe()}")
+    # Built-in languages (the ISL alphabet) are imported once, in the
+    # background, if their dataset is on this machine. See backend/builtin.py.
+    from .. import builtin
+    builtin.startup()
     yield
     # Hand the pooled connections back on the way out, so a reload does not
     # leak them.
@@ -118,6 +126,9 @@ def handle_value_error(_request: Request, exc: ValueError):
 app.include_router(routes_auth.router)
 app.include_router(routes_library.router)
 app.include_router(routes_training.router)
+app.include_router(routes_users.router)
+app.include_router(routes_video.router)
+app.include_router(routes_preferences.router)
 
 
 @app.get("/models/hand_landmarker.task")
@@ -147,10 +158,39 @@ def hand_landmarker_model():
 
 @app.get("/health")
 def health():
+    """Is the server usable, and which optional parts are installed here?
+
+    The frontend shows the capability list in Settings, so a missing piece
+    reads as "not installed on this server" rather than as a broken feature.
+    """
     ok, message = db.healthcheck()
+
+    from .. import import_dataset, transcribe
+
+    speech_ok, speech_why = transcribe.available()
+    import_ok, import_why = import_dataset.available()
+    try:
+        import PIL  # noqa: F401
+        pictures_ok, pictures_why = True, ""
+    except ImportError as exc:
+        pictures_ok, pictures_why = False, str(exc)
+
     return JSONResponse(
         status_code=status.HTTP_200_OK if ok else status.HTTP_503_SERVICE_UNAVAILABLE,
-        content={"ok": ok, "database": message},
+        content={
+            "ok": ok,
+            "database": message,
+            "engine": db.engine_name() if ok else None,
+            "version": app.version,
+            "capabilities": {
+                "speechToText": {"available": speech_ok,
+                                 "detail": transcribe.model_name() if speech_ok else speech_why},
+                "datasetImport": {"available": import_ok,
+                                  "detail": "mediapipe" if import_ok else import_why},
+                "signSkeletons": {"available": pictures_ok,
+                                  "detail": "pillow" if pictures_ok else pictures_why},
+            },
+        },
     )
 
 

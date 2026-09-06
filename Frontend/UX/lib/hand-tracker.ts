@@ -13,7 +13,7 @@
  *  - **The frame is mirrored before tracking.** detector/camera.py flips the
  *    frame (mirror=True) and tracks the flipped image, so its stored landmarks
  *    are of a mirrored hand. features.py normalises away translation, scale and
- *    rotation, but a mirror is none of those — it would survive normalisation
+ *    rotation, but a mirror is none of those, it would survive normalisation
  *    and put browser samples in a different place to desktop ones. Flipping
  *    here keeps them in the same space, and gives the natural selfie preview.
  *  - **Handedness is passed through as MediaPipe reports it.** On a mirrored
@@ -45,6 +45,12 @@ const MAX_HANDS = 2
 const DETECTION_CONFIDENCE = 0.6
 const TRACKING_CONFIDENCE = 0.5
 
+/** Where the model can come from, in order of preference. */
+const MODEL_SOURCES = [
+  `${API_BASE}/models/hand_landmarker.task`,
+  'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/latest/hand_landmarker.task',
+]
+
 export class HandTracker {
   private landmarker: HandLandmarker
   /** MediaPipe rejects a timestamp that does not advance, so they are clamped. */
@@ -57,29 +63,13 @@ export class HandTracker {
   /**
    * Loads the WASM runtime and the model.
    *
-   * Both are served locally — the runtime from Next's `public/mediapipe/wasm`,
-   * the model from the SignTalk API — rather than a CDN, so the trainer works
+   * Both are served locally, the runtime from Next's `public/mediapipe/wasm`,
+   * the model from the SignTalk API, rather than a CDN, so the trainer works
    * offline and the browser provably runs the same model file as the desktop
    * detector.
    */
   static async create(): Promise<HandTracker> {
-    const fileset = await FilesetResolver.forVisionTasks('/mediapipe/wasm')
-    const landmarker = await HandLandmarker.createFromOptions(fileset, {
-      baseOptions: {
-        modelAssetPath: `${API_BASE}/models/hand_landmarker.task`,
-        delegate: 'GPU',
-      },
-      runningMode: 'VIDEO',
-      numHands: MAX_HANDS,
-      minHandDetectionConfidence: DETECTION_CONFIDENCE,
-      minHandPresenceConfidence: DETECTION_CONFIDENCE,
-      minTrackingConfidence: TRACKING_CONFIDENCE,
-    })
-
-    if (HAND_CONNECTIONS.length === 0) {
-      HAND_CONNECTIONS = HandLandmarker.HAND_CONNECTIONS ?? []
-    }
-    return new HandTracker(landmarker)
+    return new HandTracker(await createLandmarker('VIDEO', DETECTION_CONFIDENCE))
   }
 
   /** Hands in the current frame. `source` must already be mirrored. */
@@ -96,6 +86,69 @@ export class HandTracker {
       return []
     }
     return toSamples(result)
+  }
+
+  close() {
+    this.landmarker.close()
+  }
+}
+
+/**
+ * Loads the WASM runtime and the model for one running mode.
+ *
+ * The API copy first (same file the desktop detector runs, works offline);
+ * Google's public copy if the API is not up. Losing the camera because the
+ * backend is down would be the wrong failure - tracking is client-side and
+ * does not need the server at all.
+ */
+async function createLandmarker(
+  runningMode: 'VIDEO' | 'IMAGE',
+  confidence: number,
+): Promise<HandLandmarker> {
+  const fileset = await FilesetResolver.forVisionTasks('/mediapipe/wasm')
+  let lastError: unknown = null
+  for (const modelAssetPath of MODEL_SOURCES) {
+    try {
+      const landmarker = await HandLandmarker.createFromOptions(fileset, {
+        baseOptions: { modelAssetPath, delegate: 'GPU' },
+        runningMode,
+        numHands: MAX_HANDS,
+        minHandDetectionConfidence: confidence,
+        minHandPresenceConfidence: confidence,
+        minTrackingConfidence: TRACKING_CONFIDENCE,
+      })
+      if (HAND_CONNECTIONS.length === 0) {
+        HAND_CONNECTIONS = HandLandmarker.HAND_CONNECTIONS ?? []
+      }
+      return landmarker
+    } catch (cause) {
+      lastError = cause
+    }
+  }
+  throw lastError instanceof Error
+    ? lastError
+    : new Error('Could not load the hand-tracking model from any source.')
+}
+
+/**
+ * Still-image tracking, for dataset import. Photos are finished stills, so
+ * the detector can be more permissive than the live tracker: a missed hand
+ * here is a lost sample, not a false reading. Mirrors DETECT_CONFIDENCE in
+ * backend/import_dataset.py.
+ */
+export class ImageHandTracker {
+  private constructor(private landmarker: HandLandmarker) {}
+
+  static async create(): Promise<ImageHandTracker> {
+    return new ImageHandTracker(await createLandmarker('IMAGE', 0.3))
+  }
+
+  detect(source: HTMLCanvasElement | HTMLImageElement | ImageBitmap): HandSample[] {
+    try {
+      return toSamples(this.landmarker.detect(source))
+    } catch {
+      return []
+    }
   }
 
   close() {
