@@ -1,12 +1,14 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   ArrowLeft,
   ArrowUpDown,
+  CheckCircle2,
   ChevronDown,
   ChevronUp,
   Download,
+  Loader2,
   SlidersHorizontal,
   X,
 } from 'lucide-react'
@@ -14,13 +16,16 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { CheckboxControl } from '@/components/ui/checkbox'
+import { FormAlert } from '@/components/form-alert'
 import {
   availableLanguages,
-  communityEntries,
   formatUploadedOn,
   languageNames,
+  toEntry,
   type CommunityEntry,
 } from '@/lib/community-data'
+import { errorMessage } from '@/lib/api'
+import { browseCommunity, installLanguage } from '@/lib/library'
 import { cn } from '@/lib/utils'
 
 type SortKey = 'name' | 'author' | 'uploadedOn' | 'language'
@@ -43,13 +48,42 @@ const columns: { key: SortKey; label: string; width: string }[] = [
   { key: 'language', label: 'Language', width: 'w-[12%]' },
 ]
 
-/** `onBack` is optional — this app opens straight onto the table. */
-export function CommunityDatabase({ onBack }: { onBack?: () => void }) {
+export function CommunityDatabaseScreen({
+  // THE ONE DIVERGENCE FROM Frontend/UX: no default here, and the back button
+  // below is conditional. This app is a single page with nothing behind it, so
+  // history.back() would be a dead control. Keep the rest byte-identical so
+  // re-syncing stays a straight copy.
+  onBack,
+}: {
+  onBack?: () => void
+}) {
+  const [entries, setEntries] = useState<CommunityEntry[]>([])
+  const [loading, setLoading] = useState(true)
+  const [failure, setFailure] = useState<string | null>(null)
+  const [installing, setInstalling] = useState(false)
+  const [notice, setNotice] = useState<string | null>(null)
   const [selected, setSelected] = useState<string[]>([])
   const [filters, setFilters] = useState<Filters>(emptyFilters)
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [sortKey, setSortKey] = useState<SortKey>('uploadedOn')
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
+
+  const load = useCallback(async (signal?: AbortSignal) => {
+    const published = await browseCommunity('', signal)
+    if (!signal?.aborted) setEntries(published.map(toEntry))
+  }, [])
+
+  useEffect(() => {
+    const controller = new AbortController()
+    load(controller.signal)
+      .catch((cause) => {
+        if (!controller.signal.aborted) setFailure(errorMessage(cause))
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false)
+      })
+    return () => controller.abort()
+  }, [load])
 
   const activeFilterCount =
     (filters.name ? 1 : 0) +
@@ -61,7 +95,7 @@ export function CommunityDatabase({ onBack }: { onBack?: () => void }) {
     const name = filters.name.trim().toLowerCase()
     const author = filters.author.trim().toLowerCase()
 
-    const filtered = communityEntries.filter((entry) => {
+    const filtered = entries.filter((entry) => {
       if (name && !entry.name.toLowerCase().includes(name)) return false
       if (author && !entry.author.toLowerCase().includes(author)) return false
       if (filters.from && entry.uploadedOn < filters.from) return false
@@ -76,7 +110,12 @@ export function CommunityDatabase({ onBack }: { onBack?: () => void }) {
       const compared = a[sortKey].localeCompare(b[sortKey], undefined, { numeric: true })
       return compared * direction
     })
-  }, [filters, sortKey, sortDirection])
+  }, [entries, filters, sortKey, sortDirection])
+
+  // Your own languages and ones already installed are not installable again.
+  const installable = entries.filter(
+    (entry) => selected.includes(entry.id) && !entry.installed && !entry.mine,
+  ).length
 
   // Selections survive filtering, so only count the ones currently on screen.
   const visibleIds = rows.map((row) => row.id)
@@ -115,26 +154,40 @@ export function CommunityDatabase({ onBack }: { onBack?: () => void }) {
     }))
   }
 
-  function download() {
-    const chosen = communityEntries.filter((entry) => selected.includes(entry.id))
+  /** Copies the ticked languages into this account, samples and all. */
+  async function install() {
+    const chosen = entries.filter(
+      (entry) => selected.includes(entry.id) && !entry.installed && !entry.mine,
+    )
     if (!chosen.length) return
 
-    const escape = (value: string) => `"${value.replace(/"/g, '""')}"`
-    const csv = [
-      ['Name', 'Author', 'Uploaded on', 'Language'].join(','),
-      ...chosen.map((entry) =>
-        [entry.name, entry.author, entry.uploadedOn, entry.language].map(escape).join(','),
-      ),
-    ].join('\n')
-
-    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `signtalk-community-${chosen.length}-sets.csv`
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
-    URL.revokeObjectURL(url)
+    setInstalling(true)
+    setFailure(null)
+    setNotice(null)
+    const done: string[] = []
+    try {
+      // One at a time: a failure part-way through still leaves the copies that
+      // did land, and the message can say exactly how far it got.
+      for (const entry of chosen) {
+        await installLanguage(entry.id)
+        done.push(entry.name)
+      }
+      setNotice(
+        `Installed ${done.length} language${done.length === 1 ? '' : 's'} — ` +
+          `${done.join(', ')}. Open the Trainer to use ${done.length === 1 ? 'it' : 'them'}.`,
+      )
+      setSelected([])
+      await load()
+    } catch (cause) {
+      setFailure(
+        done.length
+          ? `${errorMessage(cause)} (installed ${done.join(', ')} first.)`
+          : errorMessage(cause),
+      )
+      if (done.length) await load().catch(() => undefined)
+    } finally {
+      setInstalling(false)
+    }
   }
 
   return (
@@ -145,16 +198,16 @@ export function CommunityDatabase({ onBack }: { onBack?: () => void }) {
             <button
               type="button"
               onClick={onBack}
-              aria-label="Back to home"
+              aria-label="Back to your workspace"
               className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-border text-muted-foreground transition-colors hover:border-border-strong hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <ArrowLeft className="size-4" aria-hidden="true" />
             </button>
           )}
           <div className="min-w-0">
-            <h2 className="truncate text-base font-semibold tracking-tight">Community Database</h2>
+            <h1 className="truncate text-base font-semibold tracking-tight">Community Database</h1>
             <p className="text-xs text-muted-foreground">
-              {rows.length} of {communityEntries.length} sets
+              {rows.length} of {entries.length} published
               {selected.length > 0 && ` · ${selected.length} selected`}
             </p>
           </div>
@@ -171,6 +224,19 @@ export function CommunityDatabase({ onBack }: { onBack?: () => void }) {
           </button>
         )}
       </header>
+
+      {(failure || notice || loading) && (
+        <div className="shrink-0 px-5 pt-4 sm:px-8">
+          {loading && (
+            <p className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              Loading the community database&hellip;
+            </p>
+          )}
+          {failure && <FormAlert>{failure}</FormAlert>}
+          {notice && <FormAlert tone="success">{notice}</FormAlert>}
+        </div>
+      )}
 
       {filtersOpen && (
         <div className="shrink-0 border-b bg-elevated/60 px-5 py-4 sm:px-8">
@@ -235,7 +301,7 @@ export function CommunityDatabase({ onBack }: { onBack?: () => void }) {
             <div className="flex flex-col gap-2">
               <span className="text-[0.8125rem] font-medium leading-none">Language</span>
               <div className="flex flex-wrap gap-1.5">
-                {availableLanguages.map((code) => {
+                {availableLanguages(entries).map((code) => {
                   const active = filters.languages.includes(code)
                   return (
                     <button
@@ -326,14 +392,36 @@ export function CommunityDatabase({ onBack }: { onBack?: () => void }) {
             {rows.length === 0 && (
               <tr>
                 <td colSpan={5} className="px-8 py-16 text-center">
-                  <p className="text-sm font-medium">No sets match these filters</p>
-                  <button
-                    type="button"
-                    onClick={() => setFilters(emptyFilters)}
-                    className="mt-1.5 text-xs text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  >
-                    Clear all filters
-                  </button>
+                  {/* An empty table has four different causes, and blaming the
+                      filters for all of them sends people to clear filters that
+                      were never the problem. */}
+                  {loading ? (
+                    <p className="text-sm text-muted-foreground">
+                      Loading published languages&hellip;
+                    </p>
+                  ) : failure ? (
+                    <p className="text-sm text-muted-foreground">
+                      Nothing to show &mdash; the list could not be loaded.
+                    </p>
+                  ) : entries.length === 0 ? (
+                    <>
+                      <p className="text-sm font-medium">Nothing published yet</p>
+                      <p className="mt-1.5 text-xs text-muted-foreground">
+                        Languages shared to the community database will appear here.
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-sm font-medium">No sets match these filters</p>
+                      <button
+                        type="button"
+                        onClick={() => setFilters(emptyFilters)}
+                        className="mt-1.5 text-xs text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      >
+                        Clear all filters
+                      </button>
+                    </>
+                  )}
                 </td>
               </tr>
             )}
@@ -343,9 +431,11 @@ export function CommunityDatabase({ onBack }: { onBack?: () => void }) {
 
       <footer className="flex shrink-0 items-center justify-between gap-3 border-t px-5 py-4 sm:px-8">
         <p className="text-xs text-muted-foreground" aria-live="polite">
-          {selected.length > 0
-            ? `${selected.length} set${selected.length > 1 ? 's' : ''} selected`
-            : 'Select sets to download'}
+          {installable > 0
+            ? `${installable} set${installable > 1 ? 's' : ''} ready to install`
+            : selected.length > 0
+              ? 'Those are already yours'
+              : 'Select sets to install'}
         </p>
         <div className="flex items-center gap-2.5">
           <Button
@@ -363,9 +453,18 @@ export function CommunityDatabase({ onBack }: { onBack?: () => void }) {
               </span>
             )}
           </Button>
-          <Button type="button" size="lg" onClick={download} disabled={selected.length === 0}>
-            <Download className="size-4" aria-hidden="true" />
-            Download
+          <Button
+            type="button"
+            size="lg"
+            onClick={() => void install()}
+            disabled={installable === 0 || installing}
+          >
+            {installing ? (
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <Download className="size-4" aria-hidden="true" />
+            )}
+            {installing ? 'Installing…' : 'Install'}
           </Button>
         </div>
       </footer>
@@ -391,7 +490,22 @@ function Row({
       )}
     >
       <td className="truncate py-3 pl-5 pr-3 font-medium sm:pl-8" title={entry.name}>
-        {entry.name}
+        <span className="flex items-center gap-2">
+          <span className="truncate">{entry.name}</span>
+          {entry.mine ? (
+            <span className="shrink-0 rounded-md border border-border bg-muted/60 px-1.5 py-0.5 font-mono text-[0.625rem] uppercase text-muted-foreground">
+              Yours
+            </span>
+          ) : entry.installed ? (
+            <span className="flex shrink-0 items-center gap-1 text-[0.6875rem] font-medium text-success">
+              <CheckCircle2 className="size-3.5" aria-hidden="true" />
+              Installed
+            </span>
+          ) : null}
+        </span>
+        <span className="block text-xs text-muted-foreground">
+          {entry.signs} sign{entry.signs === 1 ? '' : 's'} · {entry.samples} samples
+        </span>
       </td>
       <td className="truncate px-3 py-3 font-mono text-[0.8125rem] text-muted-foreground">
         {entry.author}
