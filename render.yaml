@@ -12,7 +12,13 @@ services:
     name: signtalk-api
     runtime: python
     plan: free
-    region: oregon
+    # Must match the database's region, and both should sit near the users.
+    # Most of them are in India, so this and the Neon project are in Singapore:
+    # anything else puts an intercontinental round trip on every query, and the
+    # trainer makes about 12 of them a second. Neither Render nor Neon can move
+    # a service between regions after it is created - only deleting and
+    # remaking it - so this is worth getting right before the first deploy.
+    region: singapore
     healthCheckPath: /health
 
     buildCommand: pip install -r requirements.txt
