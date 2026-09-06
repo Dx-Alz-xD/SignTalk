@@ -20,6 +20,7 @@ from .errors import (
     ChallengeError,
     DuplicateAccountError,
     InvalidCredentialsError,
+    RateLimitedError,
     SessionError,
     ValidationError,
 )
@@ -61,6 +62,7 @@ __all__ = [
     "AccountLockedError",
     "ChallengeError",
     "SessionError",
+    "RateLimitedError",
     "DEMO_EMAIL",
     "DEMO_PASSWORD",
     "DEMO_PHONE",

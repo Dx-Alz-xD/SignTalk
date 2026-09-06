@@ -18,10 +18,12 @@ alternative to the password on the main menu.
 
 from __future__ import annotations
 
+import math
 import os
 from datetime import timedelta
 from functools import lru_cache
 
+from ..ratelimit import RateLimiter
 from . import security
 from .delivery import CHANNEL_EMAIL, CHANNEL_SMS, CHANNELS, Courier, DeliveryError
 from .errors import (
@@ -29,6 +31,7 @@ from .errors import (
     ChallengeError,
     DuplicateAccountError,
     InvalidCredentialsError,
+    RateLimitedError,
     SessionError,
     ValidationError,
 )
@@ -61,11 +64,23 @@ class AuthService:
     OTP_TTL_SECONDS = 300  # 5 minutes
     OTP_MAX_ATTEMPTS = 3
 
+    # Sending a code costs money on SMS and costs reputation on email, and the
+    # request needs nothing but an address someone else owns. Two limits: a
+    # short cooldown so a held-down button cannot bomb a phone, and an hourly
+    # ceiling so a patient script cannot either. Both are per account and
+    # channel, because that is what the recipient actually feels.
+    OTP_RESEND_COOLDOWN_SECONDS = 60
+    OTP_MAX_PER_HOUR = 5
+
     # A verified code becomes a ticket, good for one follow-up action.
     TICKET_TTL_SECONDS = 600  # 10 minutes
 
     # Sessions
     SESSION_TTL_MINUTES = 30
+    # Sliding expiry alone means a session that is used often never ends. This
+    # is the ceiling: however active you are, you re-authenticate once a day,
+    # which bounds how long a stolen cookie stays worth anything.
+    SESSION_ABSOLUTE_HOURS = 24
 
     def __init__(
         self,
@@ -79,6 +94,9 @@ class AuthService:
         self.store = store or InMemoryStore()
         self.courier = courier or Courier()
         self.current_session: Session | None = None
+        # Per service instance, so the CLI and the API each get their own and
+        # a test can construct a fresh service to get fresh counters.
+        self.delivery_limiter = RateLimiter()
         if seed_demo_account:
             self._seed_demo_account()
 
@@ -184,6 +202,32 @@ class AuthService:
 
     # --- account recovery: send a code --------------------------------------
 
+    def _check_delivery_limit(self, email: str, channel: str) -> None:
+        """Refuse to send another code too soon. Raises RateLimitedError.
+
+        Both windows are consulted before either is spent, so a request that
+        the hourly ceiling will refuse does not also burn the cooldown.
+        """
+        key = f"{channel}:{email}"
+        refused, wait = self.delivery_limiter.consume((
+            (f"cooldown:{key}", 1, float(self.OTP_RESEND_COOLDOWN_SECONDS)),
+            (f"hourly:{key}", self.OTP_MAX_PER_HOUR, 3600.0),
+        ))
+        if refused is None:
+            return
+
+        seconds = max(1, math.ceil(wait))
+        if refused.startswith("hourly:"):
+            raise RateLimitedError(
+                f"Too many codes requested for this account. "
+                f"Try again in {seconds // 60 + 1} minute(s).",
+                retry_after=seconds,
+            )
+        raise RateLimitedError(
+            f"A code was just sent. Wait {seconds}s before asking for another.",
+            retry_after=seconds,
+        )
+
     def request_recovery_code(self, email: str, channel: str) -> str | None:
         """Send a one-time code to the account's email or phone.
 
@@ -206,6 +250,17 @@ class AuthService:
         destination = user.email if channel == CHANNEL_EMAIL else user.phone
         if not destination:
             return None  # SMS requested but no number on the account
+
+        # Checked here rather than at the top of the function on purpose. Above
+        # this line we have not decided whether the account exists, and a limit
+        # that only bites for real accounts would answer that question for an
+        # attacker. Below it we are committed to sending, so this is the last
+        # point where refusing is still free.
+        #
+        # It also has to come before invalidate_challenges_for: a refused
+        # request must leave the code the user is already holding alone,
+        # otherwise the throttle becomes a way to keep anyone locked out.
+        self._check_delivery_limit(email, channel)
 
         # A fresh code retires anything still outstanding for this account.
         self.store.invalidate_challenges_for(email)
@@ -386,13 +441,26 @@ class AuthService:
             self.store.drop_session(token)
             raise SessionError("Your session expired. Sign in again.")
 
+        # The ceiling on sliding expiry. Without it, a session that is used
+        # every few minutes never ends, so a stolen cookie stays good for as
+        # long as the thief keeps using it.
+        age = utcnow() - session.issued_at
+        if age >= timedelta(hours=self.SESSION_ABSOLUTE_HOURS):
+            self.store.drop_session(token)
+            raise SessionError("Your session has reached its maximum age. Sign in again.")
+
         # Sliding expiry: using the app keeps you signed in, which is what
         # "30 minutes of inactivity" means and what the sign-in page promises.
         # Only rewritten past the halfway mark, so an active session is not a
         # write on every request.
         remaining = (session.expires_at - utcnow()).total_seconds()
         if remaining < self.SESSION_TTL_MINUTES * 30:      # half the TTL, in seconds
-            session.expires_at = utcnow() + timedelta(minutes=self.SESSION_TTL_MINUTES)
+            # Never past the absolute ceiling: the sliding window may run out
+            # early, but it must not carry the session beyond it.
+            ceiling = session.issued_at + timedelta(hours=self.SESSION_ABSOLUTE_HOURS)
+            session.expires_at = min(
+                utcnow() + timedelta(minutes=self.SESSION_TTL_MINUTES), ceiling
+            )
             self.store.extend_session(token, session.expires_at)
 
         self.store.touch_session(token)

@@ -110,15 +110,19 @@ assert user.password_hash.startswith("$argon2id$")
 assert "sunflower22" not in user.password_hash
 check("sign up normalises the phone number and stores only a hash")
 
-expect(DuplicateAccountError, auth.sign_up, "someone", "AARAV@signtalk.dev", "abcdef")
-expect(DuplicateAccountError, auth.sign_up, "aarav", "other@signtalk.dev", "abcdef")
-expect(ValidationError, auth.sign_up, "x", "a@b.dev", "abcdef")
-expect(ValidationError, auth.sign_up, "goodname", "not-an-email", "abcdef")
+# Every password here has to clear MIN_PASSWORD_LENGTH, or sign_up refuses it
+# on length before it ever looks at the email, and each of these cases passes
+# for the wrong reason - which is exactly what used to hide the rest of this
+# file behind a ValidationError on line one.
+expect(DuplicateAccountError, auth.sign_up, "someone", "AARAV@signtalk.dev", "sunflower22")
+expect(DuplicateAccountError, auth.sign_up, "aarav", "other@signtalk.dev", "sunflower22")
+expect(ValidationError, auth.sign_up, "x", "a@b.dev", "sunflower22")
+expect(ValidationError, auth.sign_up, "goodname", "not-an-email", "sunflower22")
 expect(ValidationError, auth.sign_up, "goodname", "a@b.dev", "123")
-expect(ValidationError, auth.sign_up, "goodname", "a@b.dev", "abcdef", "98123")
+expect(ValidationError, auth.sign_up, "goodname", "a@b.dev", "sunflower22", "98123")
 check("duplicates, bad email/username/password and a bad phone are rejected")
 
-assert auth.sign_up("noph", "noph@signtalk.dev", "abcdef").phone is None
+assert auth.sign_up("noph", "noph@signtalk.dev", "sunflower22").phone is None
 check("phone is optional at sign up")
 
 # --- 4. password sign in + lockout ------------------------------------------
@@ -151,7 +155,7 @@ assert not courier.email.outbox, "picking SMS must not also send an email"
 check("recovery code can be delivered by SMS to the number on the account")
 
 auth, courier = new_service()
-auth.sign_up("nophone", "nophone@signtalk.dev", "abcdef")
+auth.sign_up("nophone", "nophone@signtalk.dev", "sunflower22")
 assert auth.request_recovery_code("nophone@signtalk.dev", CHANNEL_SMS) is None
 assert not courier.sms.outbox
 check("SMS is refused when no number is on file (caller shows a generic message)")

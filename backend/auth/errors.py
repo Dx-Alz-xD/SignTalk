@@ -37,3 +37,17 @@ class ChallengeError(AuthError):
 
 class SessionError(AuthError):
     """No active session, or the session has expired."""
+
+
+class RateLimitedError(AuthError):
+    """Correct request, asked for too often. Try again later.
+
+    Distinct from AccountLockedError: that one means this account is cooling
+    down after wrong passwords, this one means the caller is going too fast.
+    Carries the wait so the interface can say how long, and so the HTTP layer
+    can put it in a Retry-After header.
+    """
+
+    def __init__(self, message: str, retry_after: int) -> None:
+        super().__init__(message)
+        self.retry_after = retry_after
