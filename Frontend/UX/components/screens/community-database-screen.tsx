@@ -452,19 +452,30 @@ export function CommunityDatabaseScreen({
             {rows.length === 0 && !loading && (
               <tr>
                 <td colSpan={5} className="p-5 sm:p-8">
+                  {/* An empty table has more than one cause, and blaming the
+                      filters for all of them sends people to clear filters that
+                      were never the problem. Loading is answered by the skeleton
+                      rows above this table, so what is left here is: the list
+                      failed to load, nothing has been published at all, or the
+                      search and filters matched none of what there is. */}
                   <EmptyState
                     icon={<Database className="size-6" aria-hidden="true" />}
                     title={
-                      entries.length === 0
-                        ? 'Nothing has been published yet'
-                        : 'No sets match your search'
+                      failure
+                        ? 'The list could not be loaded'
+                        : entries.length === 0
+                          ? 'Nothing has been published yet'
+                          : 'No sets match your search'
                     }
                     description={
-                      entries.length === 0
-                        ? 'Sign languages people publish from the Trainer show up here for anyone to install.'
-                        : 'Try a different word, or clear the filters.'
+                      failure
+                        ? 'There is nothing to show until the community database answers. The reason is at the top of this screen.'
+                        : entries.length === 0
+                          ? 'Sign languages people publish from the Trainer show up here for anyone to install.'
+                          : 'Try a different word, or clear the filters.'
                     }
                     actions={
+                      !failure &&
                       (search || activeFilterCount > 0) && (
                         <Button
                           size="sm"
