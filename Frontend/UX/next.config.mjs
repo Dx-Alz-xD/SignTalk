@@ -18,6 +18,28 @@ const nextConfig = {
     unoptimized: true,
   },
 
+  // Serve the API from this same origin in production, by proxying /api to
+  // wherever the backend actually runs (SIGNTALK_API_ORIGIN).
+  //
+  // This is not a convenience. The session is a SameSite=Lax cookie, and Lax
+  // means the browser withholds it on cross-*site* requests - and every host
+  // on vercel.app, onrender.com and their like is its own site. Split across
+  // two of those, login succeeds and every request after it is a 401. Behind
+  // this rewrite the cookie is first-party, CORS stops applying, and the CSP's
+  // connect-src needs nothing but 'self'.
+  //
+  // Set NEXT_PUBLIC_SIGNTALK_API=/api alongside it so the client builds
+  // relative URLs. A static export has no server to proxy with, so the desktop
+  // build keeps calling the backend directly.
+  ...(desktop || !process.env.SIGNTALK_API_ORIGIN
+    ? {}
+    : {
+        async rewrites() {
+          const origin = process.env.SIGNTALK_API_ORIGIN.replace(/\/+$/, '')
+          return [{ source: '/api/:path*', destination: `${origin}/:path*` }]
+        },
+      }),
+
   // The Content-Security-Policy is not here: it carries a per-request nonce,
   // so it is set in proxy.ts. These are the headers that never vary.
   // A static export has no server to send them - the desktop app is served

@@ -1,0 +1,50 @@
+# Render blueprint for the SignTalk API.
+#
+# Render reads this when you point it at the repository, so the service is
+# described here rather than in a dashboard nobody can diff.
+#
+# The database is deliberately not defined here: Render's own free Postgres is
+# deleted 30 days after it is created, which is a bad surprise to schedule for
+# yourself. Create a free project at neon.tech instead and paste its connection
+# string into DATABASE_URL below.
+services:
+  - type: web
+    name: signtalk-api
+    runtime: python
+    plan: free
+    region: oregon
+    healthCheckPath: /health
+
+    buildCommand: pip install -r requirements.txt
+    # $PORT is assigned by Render; binding anything else makes the service
+    # look permanently unhealthy. One worker, because the free instance has
+    # 512 MB and a tenth of a CPU to share.
+    startCommand: uvicorn backend.api.main:app --host 0.0.0.0 --port $PORT --workers 1
+
+    envVars:
+      - key: PYTHON_VERSION
+        value: '3.12'
+
+      # Turns on the Secure cookie flag and HSTS, takes /docs off the
+      # internet, keeps unexpected error text in the log, and stops the demo
+      # account being seeded.
+      - key: SIGNTALK_ENV
+        value: prod
+
+      # Refuse the SQLite fallback. Without this a misconfigured DATABASE_URL
+      # would quietly write to a local file that Render deletes on next deploy,
+      # and accounts would vanish rather than fail loudly.
+      - key: SIGNTALK_DB
+        value: postgres
+
+      # Both set by hand in the dashboard, not here - one is a secret, and the
+      # other is not known until Vercel has given the frontend its URL.
+      #
+      #   DATABASE_URL       the Neon connection string (mark as secret)
+      #   SIGNTALK_ORIGINS   https://<your-app>.vercel.app
+      #
+      # The API refuses to start in production until SIGNTALK_ORIGINS is set.
+      - key: DATABASE_URL
+        sync: false
+      - key: SIGNTALK_ORIGINS
+        sync: false

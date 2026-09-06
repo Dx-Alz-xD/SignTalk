@@ -18,16 +18,24 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
 /**
- * The API lives on its own origin, so it has to be named in connect-src or
- * every call the app makes is blocked. Only the origin is taken: CSP matches
- * on scheme/host/port and a path here would silently never match.
+ * The API's origin, when it has one of its own, for connect-src.
+ *
+ * Returns '' when the API is same-origin - deployments set
+ * NEXT_PUBLIC_SIGNTALK_API=/api and let next.config.mjs proxy it, and 'self'
+ * already covers that. A relative path must not be emitted as a source: CSP
+ * matches on scheme/host/port, so '/api' would be a malformed source
+ * expression, and browsers drop the whole directive when they meet one.
  */
 function apiOrigin(): string {
   const configured = process.env.NEXT_PUBLIC_SIGNTALK_API ?? 'http://localhost:8000'
   try {
-    return new URL(configured).origin
+    const url = new URL(configured)
+    // Only http(s) has an origin worth naming. Anything else - a bare path, a
+    // Windows path, a file: URL - yields the opaque origin, whose serialisation
+    // is the string "null", and emitting that would poison the directive.
+    return url.protocol === 'http:' || url.protocol === 'https:' ? url.origin : ''
   } catch {
-    return configured
+    return ''
   }
 }
 
@@ -66,7 +74,7 @@ export function proxy(request: NextRequest) {
     // when this server does not have the file (lib/hand-tracker.ts). Drop it
     // if you would rather the app fail closed than reach Google - the model is
     // normally served from the API, and the tracker prefers that copy.
-    `connect-src 'self' ${api} https://storage.googleapis.com${isDev ? ' ws: http://localhost:*' : ''}`,
+    `connect-src ${['\'self\'', api, 'https://storage.googleapis.com', ...(isDev ? ['ws:', 'http://localhost:*'] : [])].filter(Boolean).join(' ')}`,
 
     `object-src 'none'`,
     `base-uri 'self'`,
@@ -92,7 +100,9 @@ export const config = {
     {
       // Static assets are served straight from disk and carry no script, so
       // they neither need the policy nor the per-request work of minting one.
-      source: '/((?!_next/static|_next/image|favicon.ico|mediapipe|models).*)',
+      // /api is the rewrite to the backend, which sets its own headers and
+      // answers with JSON - a page policy on it is wasted work per request.
+      source: '/((?!api|_next/static|_next/image|favicon.ico|mediapipe|models).*)',
       missing: [
         { type: 'header', key: 'next-router-prefetch' },
         { type: 'header', key: 'purpose', value: 'prefetch' },
