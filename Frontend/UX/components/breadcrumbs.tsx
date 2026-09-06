@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils'
 
 /**
  * Visible breadcrumb trail. The matching BreadcrumbList JSON-LD is emitted by
- * PageSchema — Google requires the markup to describe a trail the user can
+ * PageSchema, Google requires the markup to describe a trail the user can
  * actually see, so the two are always passed the same array.
  *
  * The last crumb is the current page: rendered as plain text with

@@ -7,7 +7,7 @@ import { THEME_STORAGE_KEY } from '@/lib/theme-storage'
 import './globals.css'
 
 // next/font generates a hashed family name, so the CSS variable is the only
-// reliable way to reach these — naming the family in globals.css never matched.
+// reliable way to reach these, naming the family in globals.css never matched.
 const geistSans = Geist({
   subsets: ['latin'],
   variable: '--font-geist-sans',
@@ -24,15 +24,18 @@ export const metadata: Metadata = {
   // Makes every relative canonical / Open Graph URL below resolve absolutely.
   metadataBase: new URL(SITE_URL),
   title: {
-    default: `${SITE_NAME} — Real-time sign language interpretation`,
+    default: `${SITE_NAME} · Real-time sign language interpretation`,
     // Each page supplies its own short title; this keeps the brand on the end.
-    template: `%s — ${SITE_NAME}`,
+    template: `%s · ${SITE_NAME}`,
   },
   description: SITE_DESCRIPTION,
   applicationName: SITE_NAME,
   keywords: [
     'sign language',
     'ASL',
+    'ISL',
+    'BSL',
+    'custom sign language',
     'sign language translator',
     'sign language recognition',
     'accessibility',
@@ -45,14 +48,14 @@ export const metadata: Metadata = {
   openGraph: {
     type: 'website',
     siteName: SITE_NAME,
-    title: `${SITE_NAME} — Real-time sign language interpretation`,
+    title: `${SITE_NAME} · Real-time sign language interpretation`,
     description: SITE_DESCRIPTION,
     url: absoluteUrl('/'),
     locale: 'en_US',
   },
   twitter: {
     card: 'summary_large_image',
-    title: `${SITE_NAME} — Real-time sign language interpretation`,
+    title: `${SITE_NAME}, Real-time sign language interpretation`,
     description: SITE_DESCRIPTION,
   },
   robots: {

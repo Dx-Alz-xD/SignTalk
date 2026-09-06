@@ -13,7 +13,7 @@ export const metadata: Metadata = {
 
 export default function TranslatorPage() {
   return (
-    <PageShell windowTitle="SignTalk — Translator">
+    <PageShell windowTitle="Translator">
       <TranslatorRoute />
     </PageShell>
   )

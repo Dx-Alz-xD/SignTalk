@@ -243,6 +243,53 @@
     display: none;
   }
 
+  /* Range inputs: `appearance: none` (which every slider here sets, to get a
+     flat track) removes the thumb entirely in Chromium unless it is styled.
+     Without this block the sliders render as a bare bar with nothing to grab. */
+  input[type='range']::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    height: 1.05rem;
+    width: 1.05rem;
+    border-radius: 999px;
+    background: var(--primary);
+    border: 2px solid var(--card);
+    box-shadow: 0 1px 3px oklch(0 0 0 / 28%);
+    cursor: pointer;
+    transition: transform 120ms ease;
+  }
+  input[type='range']::-moz-range-thumb {
+    height: 1.05rem;
+    width: 1.05rem;
+    border-radius: 999px;
+    background: var(--primary);
+    border: 2px solid var(--card);
+    box-shadow: 0 1px 3px oklch(0 0 0 / 28%);
+    cursor: pointer;
+    transition: transform 120ms ease;
+  }
+  input[type='range']:hover::-webkit-slider-thumb {
+    transform: scale(1.1);
+  }
+  input[type='range']:hover::-moz-range-thumb {
+    transform: scale(1.1);
+  }
+  input[type='range']:active::-webkit-slider-thumb {
+    transform: scale(0.94);
+  }
+  input[type='range']:focus-visible::-webkit-slider-thumb {
+    box-shadow: 0 0 0 3px oklch(from var(--ring) l c h / 40%);
+  }
+  input[type='range']:disabled::-webkit-slider-thumb {
+    background: var(--muted-foreground);
+    cursor: not-allowed;
+  }
+
+  /* Jumping to an anchor on the long legal pages should not teleport. */
+  html {
+    scroll-behavior: smooth;
+  }
+
   ::-webkit-scrollbar {
     width: 10px;
     height: 10px;
@@ -260,6 +307,27 @@
     background: var(--muted-foreground);
     background-clip: content-box;
   }
+}
+
+/* The page ground: two soft colour washes on the canvas, plus a faint grid
+   that gives large empty areas some texture without competing with content. */
+.bg-mesh {
+  background-color: var(--canvas);
+  background-image:
+    radial-gradient(55% 45% at 12% 0%, var(--glow-a), transparent 70%),
+    radial-gradient(45% 40% at 95% 100%, var(--glow-b), transparent 70%),
+    linear-gradient(to right, oklch(from var(--foreground) l c h / 3.5%) 1px, transparent 1px),
+    linear-gradient(to bottom, oklch(from var(--foreground) l c h / 3.5%) 1px, transparent 1px);
+  background-size: 100% 100%, 100% 100%, 48px 48px, 48px 48px;
+  background-attachment: fixed, fixed, local, local;
+}
+
+/* Dotted texture for hero areas and featured cards; masked to fade out. */
+.bg-dots {
+  background-image: radial-gradient(oklch(from var(--foreground) l c h / 9%) 1px, transparent 1px);
+  background-size: 20px 20px;
+  mask-image: radial-gradient(ellipse at 70% 30%, black, transparent 75%);
+  -webkit-mask-image: radial-gradient(ellipse at 70% 30%, black, transparent 75%);
 }
 
 @keyframes screen-in {
@@ -301,6 +369,18 @@
     opacity: 0.75;
     transform: scale(1.06);
   }
+}
+
+/* The account's own "reduce motion" setting, set on <html> by the app frame.
+   The device-level preference below is honoured regardless. */
+[data-reduce-motion='true'],
+[data-reduce-motion='true'] *,
+[data-reduce-motion='true'] *::before,
+[data-reduce-motion='true'] *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+  scroll-behavior: auto !important;
 }
 
 @media (prefers-reduced-motion: reduce) {

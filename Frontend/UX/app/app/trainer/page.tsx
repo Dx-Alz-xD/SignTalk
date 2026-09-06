@@ -13,7 +13,7 @@ export const metadata: Metadata = {
 
 export default function TrainerPage() {
   return (
-    <PageShell windowTitle="SignTalk — Trainer">
+    <PageShell windowTitle="Trainer">
       <TrainerRoute />
     </PageShell>
   )

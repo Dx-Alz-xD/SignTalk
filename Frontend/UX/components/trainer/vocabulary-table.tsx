@@ -1,17 +1,18 @@
 'use client'
 
 import { useMemo, useState, type ReactNode } from 'react'
-import { Globe, Hand, Lock, Pencil, Plus, Search, X } from 'lucide-react'
+import { Globe, Hand, Layers, Lock, Pencil, Plus, Search, SearchX, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import type { Language, Sign } from '@/lib/library'
+import { EmptyState } from '@/components/ui/surface'
+import { languageTag, type Language, type Sign } from '@/lib/library'
 
 export type Vocabulary = { sign: Sign; language: Language }
 
 /**
  * Every vocabulary the signed-in user owns, live from the database.
  *
- * One row per sign, with its language's settings alongside — the language is
+ * One row per sign, with its language's settings alongside, the language is
  * what carries hand control and sample size, and both matter when deciding
  * which row to open.
  */
@@ -19,6 +20,7 @@ export function VocabularyTable({
   vocabularies,
   onOpen,
   onEdit,
+  onDelete,
   onCreate,
 }: {
   vocabularies: Vocabulary[]
@@ -26,9 +28,13 @@ export function VocabularyTable({
   onOpen: (vocabulary: Vocabulary) => void
   /** Back to the details form first, to change name, hands or sample size. */
   onEdit: (vocabulary: Vocabulary) => void
+  /** Delete the vocabulary and everything in it. Confirmed inline first. */
+  onDelete: (vocabulary: Vocabulary) => Promise<void>
   onCreate: () => void
 }) {
   const [query, setQuery] = useState('')
+  const [arming, setArming] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState<string | null>(null)
 
   const results = useMemo(() => {
     const term = query.trim().toLowerCase()
@@ -36,7 +42,8 @@ export function VocabularyTable({
     return vocabularies.filter(
       ({ sign, language }) =>
         sign.name.toLowerCase().includes(term) ||
-        language.name.toLowerCase().includes(term),
+        language.name.toLowerCase().includes(term) ||
+        languageTag(language).toLowerCase().includes(term),
     )
   }, [query, vocabularies])
 
@@ -57,7 +64,7 @@ export function VocabularyTable({
             type="search"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search name or language"
+            placeholder="Search name, language or tag"
             aria-label="Search vocabularies"
             className={cn(
               'h-9 w-full rounded-lg border border-input bg-elevated pl-9 pr-8 text-sm text-foreground',
@@ -81,14 +88,28 @@ export function VocabularyTable({
       </div>
 
       {vocabularies.length === 0 ? (
-        <p className="text-sm leading-relaxed text-muted-foreground">
-          Nothing trained yet. Create a sign language to get started — you&rsquo;ll name
-          it, say which hands it uses, then record the individual signs.
-        </p>
+        <EmptyState
+          icon={<Layers className="size-6" aria-hidden="true" />}
+          title="Nothing trained yet"
+          description="Create a sign language to get started: name it, say which hands it uses, then record the signs one at a time. Installing one from the Community works too."
+          actions={
+            <Button size="sm" onClick={onCreate}>
+              <Plus aria-hidden="true" />
+              New sign language
+            </Button>
+          }
+        />
       ) : results.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
-          No vocabulary matches &ldquo;{query}&rdquo;.
-        </p>
+        <EmptyState
+          icon={<SearchX className="size-6" aria-hidden="true" />}
+          title={`Nothing matches “${query}”`}
+          description="Search looks at the vocabulary name, the language and its tag."
+          actions={
+            <Button size="sm" variant="outline" onClick={() => setQuery('')}>
+              Clear search
+            </Button>
+          }
+        />
       ) : (
         <div className="overflow-hidden rounded-xl border bg-elevated">
           <div className="overflow-x-auto">
@@ -97,11 +118,11 @@ export function VocabularyTable({
                 <tr className="border-b bg-secondary/50">
                   <Th className="w-14 text-right">S.No</Th>
                   <Th>Name</Th>
-                  <Th className="w-32">Language</Th>
+                  <Th className="w-44">Language</Th>
                   <Th className="w-28">Hands</Th>
                   <Th className="w-24 text-right">Samples</Th>
                   <Th className="w-24 text-right">Shared</Th>
-                  <Th className="w-20 text-right">Edit</Th>
+                  <Th className="w-28 text-right">Actions</Th>
                 </tr>
               </thead>
               <tbody>
@@ -127,7 +148,12 @@ export function VocabularyTable({
                           {sign.symbol_count} symbol{sign.symbol_count === 1 ? '' : 's'}
                         </span>
                       </Td>
-                      <Td className="text-sm text-muted-foreground">{language.name}</Td>
+                      <Td>
+                        <span className="block text-sm text-foreground">{language.name}</span>
+                        <span className="block truncate text-xs text-muted-foreground" title={languageTag(language)}>
+                          {languageTag(language)}
+                        </span>
+                      </Td>
                       <Td>
                         <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
                           <Hand className="size-3.5" aria-hidden="true" />
@@ -154,15 +180,49 @@ export function VocabularyTable({
                         )}
                       </Td>
                       <Td className="text-right">
-                        <button
-                          type="button"
-                          onClick={() => onEdit(vocabulary)}
-                          aria-label={`Edit ${sign.name}`}
-                          title={`Edit ${sign.name}`}
-                          className="inline-flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                        >
-                          <Pencil className="size-4" />
-                        </button>
+                        {arming === sign.id ? (
+                          <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                            <span className="text-xs text-muted-foreground">Delete for good?</span>
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              disabled={deleting === sign.id}
+                              onClick={() => {
+                                setDeleting(sign.id)
+                                void onDelete(vocabulary).finally(() => {
+                                  setDeleting(null)
+                                  setArming(null)
+                                })
+                              }}
+                            >
+                              {deleting === sign.id ? 'Deleting…' : 'Delete'}
+                            </Button>
+                            <Button size="sm" variant="ghost" onClick={() => setArming(null)}>
+                              Keep
+                            </Button>
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center">
+                            <button
+                              type="button"
+                              onClick={() => onEdit(vocabulary)}
+                              aria-label={`Edit ${sign.name}`}
+                              title={`Edit ${sign.name}`}
+                              className="inline-flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            >
+                              <Pencil className="size-4" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setArming(sign.id)}
+                              aria-label={`Delete ${sign.name}`}
+                              title={`Delete ${sign.name} and everything in it`}
+                              className="inline-flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            >
+                              <Trash2 className="size-4" />
+                            </button>
+                          </span>
+                        )}
                       </Td>
                     </tr>
                   )

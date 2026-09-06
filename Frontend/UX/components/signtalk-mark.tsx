@@ -1,7 +1,8 @@
+import Link from 'next/link'
 import { cn } from '@/lib/utils'
 
 /**
- * Speech bubble enclosing an OK/F-handshape — three fingers raised, index and
+ * Speech bubble enclosing an OK/F-handshape, three fingers raised, index and
  * thumb closed into a ring.
  */
 export function SignTalkMark({
@@ -76,25 +77,47 @@ export function SignTalkWordmark({
   )
 }
 
-/** Mark plus wordmark, the standard horizontal lockup. */
+/**
+ * Mark plus wordmark, the standard horizontal lockup. A link to the workspace
+ * by default (a logo that goes home is what people expect); pass `href={null}`
+ * for a plain span, e.g. inside another link.
+ */
 export function SignTalkLockup({
   className,
   markClassName,
   wordmarkClassName,
   accentClassName,
+  href = '/app',
 }: {
   className?: string
   markClassName?: string
   wordmarkClassName?: string
   accentClassName?: string
+  href?: string | null
 }) {
-  return (
-    <span className={cn('flex items-center gap-2.5', className)}>
+  const content = (
+    <>
       <SignTalkMark compact className={cn('size-7 shrink-0', markClassName)} />
       <SignTalkWordmark
         className={cn('text-sm', wordmarkClassName)}
         accentClassName={accentClassName}
       />
-    </span>
+    </>
+  )
+  if (href === null) {
+    return <span className={cn('flex items-center gap-2.5', className)}>{content}</span>
+  }
+  return (
+    <Link
+      href={href}
+      aria-label="SignTalk home"
+      className={cn(
+        'flex items-center gap-2.5 rounded-md transition-opacity hover:opacity-85',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+        className,
+      )}
+    >
+      {content}
+    </Link>
   )
 }

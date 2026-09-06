@@ -7,16 +7,20 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronUp,
+  Database,
   Download,
   Loader2,
+  Search,
   SlidersHorizontal,
   X,
 } from 'lucide-react'
+import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { CheckboxControl } from '@/components/ui/checkbox'
 import { FormAlert } from '@/components/form-alert'
+import { EmptyState, Skeleton } from '@/components/ui/surface'
 import {
   availableLanguages,
   formatUploadedOn,
@@ -45,7 +49,7 @@ const columns: { key: SortKey; label: string; width: string }[] = [
   { key: 'name', label: 'Name', width: 'w-[38%]' },
   { key: 'author', label: 'Author', width: 'w-[22%]' },
   { key: 'uploadedOn', label: 'Uploaded on', width: 'w-[20%]' },
-  { key: 'language', label: 'Language', width: 'w-[12%]' },
+  { key: 'language', label: 'Hands', width: 'w-[12%]' },
 ]
 
 export function CommunityDatabaseScreen({
@@ -63,6 +67,7 @@ export function CommunityDatabaseScreen({
   const [selected, setSelected] = useState<string[]>([])
   const [filters, setFilters] = useState<Filters>(emptyFilters)
   const [filtersOpen, setFiltersOpen] = useState(false)
+  const [search, setSearch] = useState('')
   const [sortKey, setSortKey] = useState<SortKey>('uploadedOn')
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
 
@@ -93,7 +98,17 @@ export function CommunityDatabaseScreen({
     const name = filters.name.trim().toLowerCase()
     const author = filters.author.trim().toLowerCase()
 
+    const term = search.trim().toLowerCase()
     const filtered = entries.filter((entry) => {
+      if (
+        term &&
+        !entry.name.toLowerCase().includes(term) &&
+        !entry.author.toLowerCase().includes(term) &&
+        !entry.tag.toLowerCase().includes(term) &&
+        !entry.description.toLowerCase().includes(term)
+      ) {
+        return false
+      }
       if (name && !entry.name.toLowerCase().includes(name)) return false
       if (author && !entry.author.toLowerCase().includes(author)) return false
       if (filters.from && entry.uploadedOn < filters.from) return false
@@ -108,7 +123,7 @@ export function CommunityDatabaseScreen({
       const compared = a[sortKey].localeCompare(b[sortKey], undefined, { numeric: true })
       return compared * direction
     })
-  }, [entries, filters, sortKey, sortDirection])
+  }, [entries, filters, sortKey, sortDirection, search])
 
   // Your own languages and ones already installed are not installable again.
   const installable = entries.filter(
@@ -171,7 +186,7 @@ export function CommunityDatabaseScreen({
         done.push(entry.name)
       }
       setNotice(
-        `Installed ${done.length} language${done.length === 1 ? '' : 's'} — ` +
+        `Installed ${done.length} language${done.length === 1 ? '' : 's'}: ` +
           `${done.join(', ')}. Open the Trainer to use ${done.length === 1 ? 'it' : 'them'}.`,
       )
       setSelected([])
@@ -209,28 +224,77 @@ export function CommunityDatabaseScreen({
           </div>
         </div>
 
-        {activeFilterCount > 0 && (
-          <button
+        <div className="flex flex-1 flex-wrap items-center justify-end gap-2 sm:flex-nowrap">
+          <div className="relative w-full sm:w-72">
+            <Search
+              className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+              aria-hidden="true"
+            />
+            <input
+              type="search"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search name, author, tag"
+              aria-label="Search the community database"
+              className={cn(
+                'h-9 w-full rounded-lg border border-input bg-elevated pl-9 pr-8 text-sm text-foreground',
+                'placeholder:text-muted-foreground/70 hover:border-border-strong',
+                'focus-visible:border-ring focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/35',
+                '[&::-webkit-search-cancel-button]:appearance-none',
+              )}
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch('')}
+                aria-label="Clear search"
+                className="absolute right-2 top-1/2 flex size-5 -translate-y-1/2 items-center justify-center rounded text-muted-foreground hover:text-foreground"
+              >
+                <X className="size-3.5" aria-hidden="true" />
+              </button>
+            )}
+          </div>
+          <Button
             type="button"
-            onClick={() => setFilters(emptyFilters)}
-            className="flex items-center gap-1.5 rounded-full border border-primary/25 bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            variant={filtersOpen ? 'default' : 'outline'}
+            size="lg"
+            onClick={() => setFiltersOpen((open) => !open)}
+            aria-expanded={filtersOpen}
           >
-            {activeFilterCount} filter{activeFilterCount > 1 ? 's' : ''} active
-            <X className="size-3" aria-hidden="true" />
-          </button>
-        )}
+            <SlidersHorizontal className="size-4" aria-hidden="true" />
+            Filter
+            {activeFilterCount > 0 && (
+              <span className="ml-0.5 flex size-4 items-center justify-center rounded-full bg-primary-foreground/20 text-[0.625rem] font-semibold">
+                {activeFilterCount}
+              </span>
+            )}
+          </Button>
+          {activeFilterCount > 0 && (
+            <button
+              type="button"
+              onClick={() => setFilters(emptyFilters)}
+              className="flex items-center gap-1.5 rounded-full border border-primary/25 bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              Clear
+              <X className="size-3" aria-hidden="true" />
+            </button>
+          )}
+        </div>
       </header>
 
-      {(failure || notice || loading) && (
+      {(failure || notice) && (
         <div className="shrink-0 px-5 pt-4 sm:px-8">
-          {loading && (
-            <p className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-              Loading the community database&hellip;
-            </p>
-          )}
           {failure && <FormAlert>{failure}</FormAlert>}
           {notice && <FormAlert tone="success">{notice}</FormAlert>}
+        </div>
+      )}
+
+      {loading && (
+        <div className="flex shrink-0 flex-col gap-2 px-5 pt-4 sm:px-8" aria-busy="true">
+          <span className="sr-only">Loading the community database</span>
+          {[0, 1, 2, 3, 4].map((row) => (
+            <Skeleton key={row} className="h-12 rounded-lg" />
+          ))}
         </div>
       )}
 
@@ -295,7 +359,7 @@ export function CommunityDatabaseScreen({
               </div>
             </div>
             <div className="flex flex-col gap-2">
-              <span className="text-[0.8125rem] font-medium leading-none">Language</span>
+              <span className="text-[0.8125rem] font-medium leading-none">Hands</span>
               <div className="flex flex-wrap gap-1.5">
                 {availableLanguages(entries).map((code) => {
                   const active = filters.languages.includes(code)
@@ -385,17 +449,36 @@ export function CommunityDatabaseScreen({
                 onToggle={() => toggleRow(entry.id)}
               />
             ))}
-            {rows.length === 0 && (
+            {rows.length === 0 && !loading && (
               <tr>
-                <td colSpan={5} className="px-8 py-16 text-center">
-                  <p className="text-sm font-medium">No sets match these filters</p>
-                  <button
-                    type="button"
-                    onClick={() => setFilters(emptyFilters)}
-                    className="mt-1.5 text-xs text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  >
-                    Clear all filters
-                  </button>
+                <td colSpan={5} className="p-5 sm:p-8">
+                  <EmptyState
+                    icon={<Database className="size-6" aria-hidden="true" />}
+                    title={
+                      entries.length === 0
+                        ? 'Nothing has been published yet'
+                        : 'No sets match your search'
+                    }
+                    description={
+                      entries.length === 0
+                        ? 'Sign languages people publish from the Trainer show up here for anyone to install.'
+                        : 'Try a different word, or clear the filters.'
+                    }
+                    actions={
+                      (search || activeFilterCount > 0) && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setSearch('')
+                            setFilters(emptyFilters)
+                          }}
+                        >
+                          Clear search and filters
+                        </Button>
+                      )
+                    }
+                  />
                 </td>
               </tr>
             )}
@@ -412,21 +495,6 @@ export function CommunityDatabaseScreen({
               : 'Select sets to install'}
         </p>
         <div className="flex items-center gap-2.5">
-          <Button
-            type="button"
-            variant="outline"
-            size="lg"
-            onClick={() => setFiltersOpen((open) => !open)}
-            aria-expanded={filtersOpen}
-          >
-            <SlidersHorizontal className="size-4" aria-hidden="true" />
-            Filter
-            {activeFilterCount > 0 && (
-              <span className="ml-0.5 flex size-4 items-center justify-center rounded-full bg-primary text-[0.625rem] font-semibold text-primary-foreground">
-                {activeFilterCount}
-              </span>
-            )}
-          </Button>
           <Button
             type="button"
             size="lg"
@@ -477,12 +545,24 @@ function Row({
             </span>
           ) : null}
         </span>
-        <span className="block text-xs text-muted-foreground">
-          {entry.signs} sign{entry.signs === 1 ? '' : 's'} · {entry.samples} samples
+        <span className="block truncate text-xs text-muted-foreground" title={entry.description || undefined}>
+          <span className="text-primary/90">{entry.tag}</span> · {entry.signs} sign{entry.signs === 1 ? '' : 's'} ·{' '}
+          {entry.samples} samples
         </span>
       </td>
       <td className="truncate px-3 py-3 font-mono text-[0.8125rem] text-muted-foreground">
-        {entry.author}
+        {entry.author && entry.author !== 'unknown' ? (
+          <Link
+            href={`/app/users/${encodeURIComponent(entry.author)}`}
+            onClick={(event) => event.stopPropagation()}
+            className="rounded-sm underline-offset-4 hover:text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            title={`View ${entry.author}'s profile`}
+          >
+            {entry.author}
+          </Link>
+        ) : (
+          entry.author
+        )}
       </td>
       <td className="whitespace-nowrap px-3 py-3 text-muted-foreground">
         {formatUploadedOn(entry.uploadedOn)}

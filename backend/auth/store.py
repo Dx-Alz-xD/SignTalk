@@ -60,6 +60,11 @@ class InMemoryStore:
     def touch_session(self, token: str) -> None:
         pass
 
+    def extend_session(self, token: str, expires_at) -> None:
+        # The in-memory store hands out the live Session, so the service's
+        # own assignment already moved it.
+        pass
+
     def record_event(self, email, event, **kwargs) -> None:
         pass
 

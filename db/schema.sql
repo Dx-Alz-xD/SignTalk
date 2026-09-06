@@ -5,7 +5,7 @@
 -- Safe to re-run: every object is created IF NOT EXISTS, and nothing here
 -- drops or rewrites existing data.
 --
--- See db/SCHEMA.md for the reasoning behind each decision.
+-- See docs/schema.md for the reasoning behind each decision.
 
 BEGIN;
 
@@ -458,6 +458,128 @@ END $$;
 
 INSERT INTO schema_migrations (version, name)
 VALUES (2, 'trainer configuration and symbol output')
+ON CONFLICT (version) DO NOTHING;
+
+
+-- ===========================================================================
+-- MIGRATION 3: gesture translation
+-- ===========================================================================
+-- Sign-to-sign translation shows the *target* language's signs as pictures,
+-- one per symbol. That needs a reference image per symbol, which is the one
+-- place SignTalk keeps a frame rather than landmarks - so it is opt-in per
+-- language (gesture_translation), captured only while the flag is on, and
+-- small (a thumbnail, capped by the size CHECK below).
+
+ALTER TABLE languages ADD COLUMN IF NOT EXISTS gesture_translation BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- Milliseconds each picture stays up during playback.
+ALTER TABLE languages ADD COLUMN IF NOT EXISTS gesture_interval_ms INTEGER NOT NULL DEFAULT 1200;
+
+DO $$
+BEGIN
+    ALTER TABLE languages ADD CONSTRAINT languages_gesture_interval
+        CHECK (gesture_interval_ms BETWEEN 200 AND 10000);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+CREATE TABLE IF NOT EXISTS symbol_images (
+    symbol_id       UUID        PRIMARY KEY REFERENCES symbols(id) ON DELETE CASCADE,
+    mime            TEXT        NOT NULL,
+    image           BYTEA       NOT NULL,
+    width           INTEGER,
+    height          INTEGER,
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    CONSTRAINT symbol_images_mime CHECK (mime IN ('image/jpeg', 'image/png', 'image/webp')),
+    -- A thumbnail, not a photo album: 400 KB is generous for 320px JPEG.
+    CONSTRAINT symbol_images_size CHECK (octet_length(image) BETWEEN 1 AND 400000)
+);
+
+INSERT INTO schema_migrations (version, name)
+VALUES (3, 'gesture translation and symbol images')
+ON CONFLICT (version) DO NOTHING;
+
+
+-- ===========================================================================
+-- MIGRATION 4: spoken language
+-- ===========================================================================
+-- Which spoken language a sign language's symbols spell out (BCP-47 code:
+-- en, hi, es...). Translating between two sign languages goes through their
+-- spoken languages - signs -> text -> translated text -> the target's signs -
+-- so each one has to say which that is.
+
+ALTER TABLE languages ADD COLUMN IF NOT EXISTS spoken_language TEXT NOT NULL DEFAULT 'en';
+
+DO $$
+BEGIN
+    ALTER TABLE languages ADD CONSTRAINT languages_spoken_language
+        CHECK (char_length(spoken_language) BETWEEN 2 AND 12);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+INSERT INTO schema_migrations (version, name)
+VALUES (4, 'spoken language')
+ON CONFLICT (version) DO NOTHING;
+
+
+-- ===========================================================================
+-- MIGRATION 5: tag
+-- ===========================================================================
+-- A free-text label saying what kind of sign language this is ("Indian Sign
+-- Language", "Classroom signs"), shown next to the name everywhere. Languages
+-- that existed before the column get one guessed from their name.
+
+ALTER TABLE languages ADD COLUMN IF NOT EXISTS tag TEXT NOT NULL DEFAULT '';
+
+DO $$
+BEGIN
+    ALTER TABLE languages ADD CONSTRAINT languages_tag_len CHECK (char_length(tag) <= 60);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+UPDATE languages SET tag = 'Indian Sign Language'    WHERE tag = '' AND upper(name) = 'ISL';
+UPDATE languages SET tag = 'American Sign Language'  WHERE tag = '' AND upper(name) = 'ASL';
+UPDATE languages SET tag = 'Bengali Sign Language'   WHERE tag = '' AND upper(name) = 'BSL';
+
+INSERT INTO schema_migrations (version, name)
+VALUES (5, 'language tag')
+ON CONFLICT (version) DO NOTHING;
+
+
+-- ===========================================================================
+-- MIGRATION 6: settings people can actually change
+-- ===========================================================================
+-- user_preferences existed from the first schema but nothing wrote to it.
+-- These columns are what the settings screen sets, and each one is read
+-- somewhere: the camera to open, whether the preview is mirrored and drawn on,
+-- how sure the recogniser must be, the capture countdown, and where the video
+-- translator's overlay starts. See backend/preferences.py.
+
+ALTER TABLE user_preferences ADD COLUMN IF NOT EXISTS camera_device_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE user_preferences ADD COLUMN IF NOT EXISTS show_skeleton BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE user_preferences ADD COLUMN IF NOT EXISTS pace TEXT NOT NULL DEFAULT 'careful';
+ALTER TABLE user_preferences ADD COLUMN IF NOT EXISTS capture_countdown INTEGER NOT NULL DEFAULT 3;
+ALTER TABLE user_preferences ADD COLUMN IF NOT EXISTS reduce_motion BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE user_preferences ADD COLUMN IF NOT EXISTS overlay_x REAL NOT NULL DEFAULT 0.68;
+ALTER TABLE user_preferences ADD COLUMN IF NOT EXISTS overlay_y REAL NOT NULL DEFAULT 0.06;
+ALTER TABLE user_preferences ADD COLUMN IF NOT EXISTS overlay_width REAL NOT NULL DEFAULT 0.26;
+ALTER TABLE user_preferences ADD COLUMN IF NOT EXISTS overlay_opacity REAL NOT NULL DEFAULT 0.95;
+ALTER TABLE user_preferences ADD COLUMN IF NOT EXISTS overlay_caption BOOLEAN NOT NULL DEFAULT TRUE;
+
+DO $$
+BEGIN
+    ALTER TABLE user_preferences ADD CONSTRAINT prefs_pace CHECK (pace IN ('careful', 'speed'));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$
+BEGIN
+    ALTER TABLE user_preferences ADD CONSTRAINT prefs_countdown CHECK (capture_countdown BETWEEN 0 AND 10);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+INSERT INTO schema_migrations (version, name)
+VALUES (6, 'preferences people can change')
 ON CONFLICT (version) DO NOTHING;
 
 COMMIT;

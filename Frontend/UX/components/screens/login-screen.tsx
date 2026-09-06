@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, type FormEvent, type ReactNode } from 'react'
-import { Loader2 } from 'lucide-react'
+import { Loader2, Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { TextField, PasswordField } from '@/components/ui/field'
 import { AuthLayout, AuthHeading, LegalNote } from '@/components/auth-layout'
@@ -112,11 +112,12 @@ export function LoginScreen({
           }
         />
 
-        {/* The backend has no "remember me" — a session is a 30-minute cookie
-            it keeps renewing while you use the app. Saying so beats a
-            checkbox that quietly does nothing. */}
+        {/* The backend has no "remember me": a session is a cookie that keeps
+            renewing while you use the app and lapses after half an hour of
+            quiet. Saying so beats a checkbox that quietly does nothing. */}
         <p className="text-xs leading-relaxed text-muted-foreground">
-          You stay signed in for 30 minutes of inactivity, on this device only.
+          You stay signed in while you are using SignTalk, and for 30 minutes of quiet after
+          that, on this device only.
         </p>
 
         <div className="mt-1 flex flex-col gap-3">
@@ -150,6 +151,22 @@ export function LoginScreen({
           >
             Create an account
           </Button>
+
+          {/* This installation seeds a demo account (see the README), so the
+              honest thing is to say so rather than leave a visitor guessing. */}
+          <button
+            type="button"
+            onClick={() => {
+              setEmail('example@gmail.com')
+              setPassword('123456')
+              setErrors({})
+              setFailure(null)
+            }}
+            className="flex items-center justify-center gap-2 rounded-lg border border-dashed px-3 py-2 text-xs text-muted-foreground transition-colors hover:border-border-strong hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <Sparkles className="size-3.5" aria-hidden="true" />
+            Just looking? Fill in the demo account
+          </button>
         </div>
       </form>
 

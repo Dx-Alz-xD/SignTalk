@@ -1,6 +1,5 @@
 /**
- * Typed wrappers over /auth. One function per endpoint, no rules of its own —
- * every decision (lockouts, code expiry, what a ticket buys) belongs to the
+ * Typed wrappers over /auth. One function per endpoint, no rules of its own, * every decision (lockouts, code expiry, what a ticket buys) belongs to the
  * service behind the API, and this file only carries the answer back.
  */
 
@@ -16,12 +15,15 @@ export type Account = {
   minutesLeft: number
   /** Masked, e.g. "+91 ••••• 45678", or null when no number is on file. */
   phone: string | null
+  /** When the account was created. */
+  joinedAt?: string | null
+  lastLoginAt?: string | null
 }
 
 export type Channel = 'email' | 'sms'
 
 export type CodeRequest = {
-  /** Null when there was nothing to send to — the screen must not react to it
+  /** Null when there was nothing to send to, the screen must not react to it
    *  differently, or it becomes an oracle for which accounts exist. */
   challengeId: string | null
   channel: Channel
@@ -41,9 +43,19 @@ export function signUp(input: {
   return api<UserResponse>('/auth/signup', { body: input }).then((r) => r.user)
 }
 
-/** `identifier` is an email or a username — the service accepts either. */
+/** `identifier` is an email or a username, the service accepts either. */
 export function signIn(identifier: string, password: string): Promise<Account> {
   return api<UserResponse>('/auth/login', { body: { identifier, password } }).then((r) => r.user)
+}
+
+/**
+ * Sets a new password from inside the session. The server re-issues this
+ * browser's session and signs every other device out.
+ */
+export function changePassword(currentPassword: string, newPassword: string): Promise<string> {
+  return api<{ user: Account; message: string }>('/auth/password', {
+    body: { currentPassword, newPassword },
+  }).then((r) => r.message)
 }
 
 export function signOut(): Promise<void> {

@@ -32,6 +32,7 @@ class SamplesBody(BaseModel):
 class PredictBody(BaseModel):
     hands: list[dict] = []
     languageId: str | None = None
+    signId: str | None = None
 
 
 class EncodeBody(BaseModel):
@@ -65,9 +66,10 @@ def delete_view(symbol_id: str, view: str, user=Depends(current_user)):
 
 
 @router.get("/model")
-def model_status(languageId: str | None = None, user=Depends(current_user)):
+def model_status(languageId: str | None = None, signId: str | None = None,
+                 user=Depends(current_user)):
     """What the interpreter would be working with right now."""
-    model = library.build_classifier(user.id, languageId)
+    model = library.build_classifier(user.id, languageId, signId)
     return {
         "trained": model.trained,
         "labels": model.label_names,
@@ -86,7 +88,7 @@ def predict(body: PredictBody, user=Depends(current_user)):
         return {"prediction": None, "hands": 0}
 
     vector = F.encode(frame)
-    model = library.build_classifier(user.id, body.languageId)
+    model = library.build_classifier(user.id, body.languageId, body.signId)
     if not model.trained:
         return {"prediction": None, "hands": frame.count, "untrained": True}
 

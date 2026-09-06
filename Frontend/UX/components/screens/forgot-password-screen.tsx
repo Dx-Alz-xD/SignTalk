@@ -63,7 +63,7 @@ export function ForgotPasswordScreen({
   // Where the server says it sent the code, already masked by the backend.
   const [sentTo, setSentTo] = useState<string | null>(null)
   // Null once the server has nothing to send to. The screen looks identical
-  // either way — which accounts exist is not something this flow may reveal.
+  // either way, which accounts exist is not something this flow may reveal.
   const [challengeId, setChallengeId] = useState<string | null>(null)
   const [ticketId, setTicketId] = useState<string | null>(null)
 
@@ -405,7 +405,7 @@ export function ForgotPasswordScreen({
                 disabled={busy}
                 onClick={() => void useTicketToSignIn()}
               >
-                Skip — log me in this once
+                Skip and log me in this once
               </Button>
             </div>
 

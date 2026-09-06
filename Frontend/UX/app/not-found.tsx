@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { Compass, KeyRound, LogIn, UserPlus } from 'lucide-react'
+import { Compass, Info, KeyRound, LogIn, UserPlus } from 'lucide-react'
 import { PageShell } from '@/components/page-shell'
 import { buttonVariants } from '@/components/ui/button'
 
@@ -24,11 +24,17 @@ const destinations = [
     description: 'Get a code by email or SMS.',
     icon: KeyRound,
   },
+  {
+    href: '/about',
+    title: 'About SignTalk',
+    description: 'What it does and how it works.',
+    icon: Info,
+  },
 ]
 
 export default function NotFound() {
   return (
-    <PageShell windowTitle="SignTalk — Page not found">
+    <PageShell windowTitle="Page not found" variant="auth">
       <div className="flex flex-1 flex-col items-center justify-center gap-8 px-6 py-12 sm:px-10">
         <div className="flex max-w-md flex-col items-center gap-3 text-center">
           <span className="flex size-12 items-center justify-center rounded-xl bg-primary/12 text-primary ring-1 ring-inset ring-primary/20">

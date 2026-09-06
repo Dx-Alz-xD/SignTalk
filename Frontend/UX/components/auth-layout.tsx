@@ -12,13 +12,7 @@ export function AuthLayout({ children }: { children: ReactNode }) {
       <BrandPanel />
       <section className="flex flex-col justify-center px-6 py-10 sm:px-10 md:px-12">
         <div className="mx-auto flex w-full max-w-sm flex-col gap-7">
-          <Link
-            href="/"
-            aria-label={`${'SignTalk'} home`}
-            className="w-fit rounded-md md:hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <SignTalkLockup />
-          </Link>
+          <SignTalkLockup href="/" className="w-fit md:hidden" />
           {children}
         </div>
       </section>
@@ -120,7 +114,18 @@ export function StepHeading({
 export function LegalNote() {
   return (
     <p className="text-center text-xs leading-relaxed text-muted-foreground">
-      By continuing you agree to the SignTalk terms of use.
+      By continuing you agree to the{' '}
+      <Link href="/terms" className="underline-offset-4 hover:text-foreground hover:underline">
+        terms and conditions
+      </Link>{' '}
+      and the{' '}
+      <Link href="/privacy" className="underline-offset-4 hover:text-foreground hover:underline">
+        privacy policy
+      </Link>
+      .{' '}
+      <Link href="/about" className="underline-offset-4 hover:text-foreground hover:underline">
+        About SignTalk
+      </Link>
     </p>
   )
 }

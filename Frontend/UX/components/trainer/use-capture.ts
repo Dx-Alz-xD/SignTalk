@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { usePreferences } from '@/components/session'
 import { errorMessage } from '@/lib/api'
 import type { HandSample } from '@/lib/hand-tracker'
 import {
@@ -15,7 +16,8 @@ import {
 
 export type Phase = 'idle' | 'countdown' | 'capturing' | 'saving'
 
-/** Seconds of lead-in before frames start counting. detector/trainer.py: 3.0. */
+/** Seconds of lead-in before frames start counting, unless the account has
+ *  set its own. detector/trainer.py uses 3.0. */
 const COUNTDOWN_SECONDS = 3
 /** Give up rather than hang if the pose never settles. detector/trainer.py: 45s. */
 const CAPTURE_TIMEOUT_MS = 45_000
@@ -27,9 +29,9 @@ const SAMPLE_INTERVAL_MS = 80
  *
  * Frames only count while the pose is holding still, so a sample set never
  * fills up with half-formed transitions between one gesture and the next. The
- * steadiness test is the server's own — /training/encode returns the same
+ * steadiness test is the server's own, /training/encode returns the same
  * feature vector the classifier will see, and the threshold is the one
- * detector/trainer.py calibrated — rather than a second, disagreeing
+ * detector/trainer.py calibrated, rather than a second, disagreeing
  * definition of "steady" invented on the client.
  */
 export function useCapture({
@@ -43,9 +45,12 @@ export function useCapture({
   /** Frames to collect, from the language's own sample_target. */
   target?: number
 }) {
+  const { captureCountdown } = usePreferences()
+  const leadIn = captureCountdown ?? COUNTDOWN_SECONDS
+
   const [phase, setPhase] = useState<Phase>('idle')
   const [collected, setCollected] = useState(0)
-  const [countdown, setCountdown] = useState(COUNTDOWN_SECONDS)
+  const [countdown, setCountdown] = useState(leadIn)
   const [steady, setSteady] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -58,8 +63,8 @@ export function useCapture({
     setPhase('idle')
     setCollected(0)
     setSteady(false)
-    setCountdown(COUNTDOWN_SECONDS)
-  }, [])
+    setCountdown(leadIn)
+  }, [leadIn])
 
   useEffect(() => cancel, [cancel])
 
@@ -73,7 +78,7 @@ export function useCapture({
       setSteady(false)
       setPhase('countdown')
 
-      for (let remaining = COUNTDOWN_SECONDS; remaining > 0; remaining -= 1) {
+      for (let remaining = leadIn; remaining > 0; remaining -= 1) {
         setCountdown(remaining)
         await wait(1000)
         if (!alive()) return
@@ -87,7 +92,7 @@ export function useCapture({
       while (alive() && samples.length < target && Date.now() < deadline) {
         const hands = handsRef.current
         if (hands.length === 0) {
-          // Nothing to measure against — drop the reference so the first frame
+          // Nothing to measure against, drop the reference so the first frame
           // after the hand returns starts a fresh comparison instead of being
           // judged against a pose from before it left.
           previous = null
@@ -149,7 +154,7 @@ export function useCapture({
         setPhase('idle')
       }
     },
-    [handsRef, onSaved, target],
+    [handsRef, onSaved, target, leadIn],
   )
 
   return {

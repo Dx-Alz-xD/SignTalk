@@ -35,5 +35,23 @@ export default function sitemap(): MetadataRoute.Sitemap {
       changeFrequency: 'yearly',
       priority: 0.3,
     },
+    {
+      url: absoluteUrl('/about'),
+      lastModified: LAST_MODIFIED,
+      changeFrequency: 'monthly',
+      priority: 0.9,
+    },
+    {
+      url: absoluteUrl('/terms'),
+      lastModified: LAST_MODIFIED,
+      changeFrequency: 'yearly',
+      priority: 0.4,
+    },
+    {
+      url: absoluteUrl('/privacy'),
+      lastModified: LAST_MODIFIED,
+      changeFrequency: 'yearly',
+      priority: 0.4,
+    },
   ]
 }

@@ -10,7 +10,7 @@ import type { Crumb } from '@/components/structured-data'
 /**
  * Client wrappers that hand the auth screens their callbacks.
  *
- * The screens themselves are route-agnostic on purpose — they report what
+ * The screens themselves are route-agnostic on purpose, they report what
  * happened and let the caller decide where that leads. Under the app router
  * the caller is a route, so navigation is what these translate the callbacks
  * into. Each page.tsx stays a server component and keeps its metadata.
