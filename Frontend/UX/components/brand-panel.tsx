@@ -1,4 +1,3 @@
-import Link from 'next/link'
 import { SignTalkLockup } from '@/components/signtalk-mark'
 import { HandGraph } from '@/components/hand-graph'
 
@@ -28,19 +27,16 @@ export function BrandPanel() {
       />
 
       <div className="relative flex items-center justify-between">
-        {/* The panel is always dark, so the lockup takes explicit colours. */}
-        <Link
+        {/* The panel is always dark, so the lockup takes explicit colours.
+            One link only: SignTalkLockup renders its own anchor, and wrapping
+            it in another nests <a> inside <a> and fails hydration. */}
+        <SignTalkLockup
           href="/"
-          aria-label="SignTalk home"
-          className="rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
-        >
-          <SignTalkLockup
-            href="/"
-            markClassName="size-7 text-[oklch(0.7_0.21_23)]"
-            wordmarkClassName="text-sm text-[oklch(0.97_0.008_30)]"
-            accentClassName="text-[oklch(0.7_0.21_23)]"
-          />
-        </Link>
+          className="focus-visible:ring-white/40"
+          markClassName="size-7 text-[oklch(0.7_0.21_23)]"
+          wordmarkClassName="text-sm text-[oklch(0.97_0.008_30)]"
+          accentClassName="text-[oklch(0.7_0.21_23)]"
+        />
         <span className="rounded-full border border-white/15 bg-white/5 px-2.5 py-1 font-mono text-[0.625rem] uppercase tracking-[0.14em] text-white/70">
           Preview
         </span>
