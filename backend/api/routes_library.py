@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Response, status
 from pydantic import BaseModel, Field
 
 from .. import library
+from ..errors import Invalid
 from .deps import current_user
 
 router = APIRouter(prefix="/library", tags=["library"])
@@ -177,7 +178,7 @@ def put_symbol_image(symbol_id: str, body: ImageBody, user=Depends(current_user)
     try:
         data = base64.b64decode(body.data, validate=True)
     except (ValueError, TypeError):
-        raise ValueError("The picture is not valid base64.") from None
+        raise Invalid("The picture is not valid base64.") from None
     stored = library.set_symbol_image(user.id, symbol_id, data, body.mime,
                                       body.width, body.height)
     return {"image": {"symbolId": str(stored["symbol_id"]), "mime": stored["mime"],

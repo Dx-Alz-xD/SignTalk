@@ -51,7 +51,10 @@ _SALT_BYTES = 16
 
 # --- input rules ------------------------------------------------------------
 
-MIN_PASSWORD_LENGTH = 6
+# OWASP's floor. Length is the only property that reliably costs an attacker
+# anything, which is also why there is no "must contain a symbol" rule here -
+# password_strength() advises, it does not gate.
+MIN_PASSWORD_LENGTH = 8
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[a-zA-Z]{2,}$")
 _USERNAME_RE = re.compile(r"^[a-zA-Z0-9._-]{3,20}$")
 _PHONE_RE = re.compile(r"^\+[1-9]\d{7,14}$")  # E.164

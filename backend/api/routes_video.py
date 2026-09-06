@@ -34,6 +34,21 @@ _jobs: dict = {}
 _jobs_lock = threading.Lock()
 
 
+def _safe_suffix(filename: str | None) -> str:
+    """The upload's extension, reduced to something safe to build a path from.
+
+    The name comes from the client, and mkstemp joins the suffix straight onto
+    the temp directory - so ".\\..\\..\\startup\\x" would decide where the file
+    lands rather than just what it is called. Only the extension is wanted
+    here anyway (ffmpeg and whisper sniff the real format from the bytes), so
+    anything that is not a short alphanumeric run is dropped.
+    """
+    extension = os.path.splitext(filename or "")[1].lstrip(".").lower()
+    if not extension.isalnum() or not 1 <= len(extension) <= 8:
+        return ".bin"
+    return f".{extension}"
+
+
 def _prune() -> None:
     cutoff = time.time() - JOB_TTL_SECONDS
     with _jobs_lock:
@@ -82,8 +97,7 @@ async def start(
                             f"Install it with: pip install faster-whisper")
     _prune()
 
-    suffix = os.path.splitext(media.filename or "")[1] or ".bin"
-    handle, path = tempfile.mkstemp(prefix="signtalk-", suffix=suffix)
+    handle, path = tempfile.mkstemp(prefix="signtalk-", suffix=_safe_suffix(media.filename))
     size = 0
     try:
         with os.fdopen(handle, "wb") as fh:

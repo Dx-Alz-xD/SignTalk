@@ -18,6 +18,7 @@ stored.
 - [What the app does](#what-the-app-does)
 - [Repository layout](#repository-layout)
 - [How recognition works](#how-recognition-works)
+- [Deploying](#deploying)
 - [Development](#development)
 - [Troubleshooting](#troubleshooting)
 
@@ -372,6 +373,84 @@ dataset, recognising a hand held at a side or top angle goes from **79.9%** with
 front-only training to **96.9%** with all views.
 
 Full detail in [docs/architecture.md](docs/architecture.md).
+
+---
+
+## Deploying
+
+Everything above describes a laptop. A public host needs five more things.
+
+**1. Tell the app it is in production.** One variable turns on the Secure flag
+on the session cookie, HSTS, and the strict error messages, and takes the
+interactive API docs off the public internet:
+
+```bash
+SIGNTALK_ENV=prod
+SIGNTALK_ORIGINS=https://signtalk.example.com   # required in prod; the API refuses to start without it
+```
+
+`SIGNTALK_ORIGINS` is the list of origins the browser app is served from. There
+is deliberately no default in production: falling back to `localhost` would
+refuse your real frontend and look like a browser bug rather than a missing
+variable.
+
+**2. Terminate TLS in front of it.** Run nginx or Caddy on 443 and proxy to
+uvicorn on localhost. Never expose uvicorn directly, and never run it with
+`--reload` in production - the reloader watches the filesystem and runs a
+second process for no benefit:
+
+```bash
+python -m uvicorn backend.api.main:app --host 127.0.0.1 --port 8000 --workers 4
+```
+
+**3. Give the database its own user.** The examples connect as `postgres`,
+which can drop any database on the server. The app only ever needs its own
+schema:
+
+```sql
+CREATE USER signtalk WITH PASSWORD 'something-long';
+GRANT CONNECT ON DATABASE signtalk TO signtalk;
+GRANT USAGE, CREATE ON SCHEMA public TO signtalk;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO signtalk;
+```
+
+Then point `DATABASE_URL` at that user rather than at `postgres`.
+
+**4. Back it up.** The languages people train are the whole value of an
+account and they exist nowhere else - a browser holds no copy. A nightly dump,
+kept somewhere other than the database host:
+
+```bash
+pg_dump --format=custom signtalk > signtalk-$(date +%F).dump
+```
+
+A backup nobody has restored is a hope, not a backup. Restore one into a
+scratch database occasionally and sign in against it.
+
+**5. Watch the dependencies.** `.github/workflows/audit.yml` runs `pip-audit`
+and `pnpm audit` on every push and once a week, because an advisory can land
+against a version that was clean the day it was pinned.
+
+### What the deployed app sends
+
+The API sets `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`,
+`Permissions-Policy` and a `default-src 'none'` CSP on every response, plus
+HSTS in production. It answers with JSON, images and one model file, so it
+never needs to permit script at all.
+
+The web app sets the same family of headers from `next.config.mjs`, and its
+Content-Security-Policy is built per request in `proxy.ts` (Next 16's renamed
+`middleware.ts`) so that it can carry a nonce. That is what makes the policy
+worth having: script runs only if it carries the nonce minted for that exact
+response, so injected markup cannot execute even if it reaches the page.
+
+Two consequences worth knowing:
+
+- **Every page is server-rendered.** A nonce cannot be baked into a static
+  file, so pages that could have been prerendered are not. This is the
+  documented cost of nonce-based CSP.
+- **The desktop build has no CSP.** It is a static export served from disk,
+  where `proxy.ts` does not run.
 
 ---
 

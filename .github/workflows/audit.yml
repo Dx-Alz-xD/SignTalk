@@ -1,0 +1,66 @@
+# Dependency audit.
+#
+# Most breaches that reach an app like this one arrive through something it
+# installed rather than something it wrote. A weekly run catches an advisory
+# published against a version that was clean the day it was pinned, which is
+# the case a per-push job would never see.
+name: audit
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Mondays, 06:00 UTC.
+    - cron: '0 6 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    name: pip-audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install pip-audit
+      # Audits the pinned set rather than the installed environment, so the
+      # result describes this repository and not the runner image.
+      - run: pip-audit --requirement requirements.txt --strict
+
+  node:
+    name: pnpm audit
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Frontend/UX
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: corepack enable pnpm
+      - run: pnpm install --frozen-lockfile
+      # Moderate and above. Low-severity advisories in build-only packages are
+      # noise here and would train everyone to ignore the job.
+      - run: pnpm audit --audit-level moderate
+
+  typecheck:
+    name: tsc
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Frontend/UX
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: corepack enable pnpm
+      - run: pnpm install --frozen-lockfile
+      # next.config.mjs no longer ignores build errors, so this is the same
+      # check the production build makes - just faster to see.
+      - run: pnpm exec tsc --noEmit

@@ -15,6 +15,7 @@ import re
 import numpy as np
 
 from . import db, landmarks
+from .errors import Invalid
 from detector import features as F
 from detector.classifier import KNNClassifier
 
@@ -91,7 +92,7 @@ def get_language(user_id, language_id) -> dict:
 def _clean_hand_control(value) -> str:
     control = (value or DEFAULT_HAND_CONTROL).strip().lower()
     if control not in HAND_CONTROLS:
-        raise ValueError("Hand control must be 'left', 'right' or 'both'.")
+        raise Invalid("Hand control must be 'left', 'right' or 'both'.")
     return control
 
 
@@ -101,9 +102,9 @@ def _clean_sample_target(value) -> int:
     try:
         target = int(value)
     except (TypeError, ValueError):
-        raise ValueError("Sample size must be a whole number.") from None
+        raise Invalid("Sample size must be a whole number.") from None
     if not MIN_SAMPLE_TARGET <= target <= MAX_SAMPLE_TARGET:
-        raise ValueError(
+        raise Invalid(
             f"Sample size must be between {MIN_SAMPLE_TARGET} and {MAX_SAMPLE_TARGET}."
         )
     return target
@@ -114,9 +115,9 @@ def create_language(user_id, name: str, description: str = "",
                     sample_target: int = DEFAULT_SAMPLE_TARGET) -> dict:
     name = (name or "").strip()
     if not name:
-        raise ValueError("A language needs a name.")
+        raise Invalid("A language needs a name.")
     if len(name) > 80:
-        raise ValueError("That name is too long (80 characters max).")
+        raise Invalid("That name is too long (80 characters max).")
 
     existing = db.fetch_one(
         "SELECT id FROM languages WHERE owner_id = %s AND lower(name) = lower(%s)",
@@ -140,14 +141,14 @@ def create_language(user_id, name: str, description: str = "",
 def _clean_tag(value) -> str:
     tag = " ".join((value or "").split())
     if len(tag) > 60:
-        raise ValueError("The tag is too long (60 characters max).")
+        raise Invalid("The tag is too long (60 characters max).")
     return tag
 
 
 def _clean_spoken_language(value) -> str:
     code = (value or DEFAULT_SPOKEN_LANGUAGE).strip().lower().replace("_", "-")
     if not re.fullmatch(r"[a-z]{2,3}(-[a-z0-9]{2,8})?", code):
-        raise ValueError("Spoken language must be a language code such as en, hi or pt-br.")
+        raise Invalid("Spoken language must be a language code such as en, hi or pt-br.")
     return code
 
 
@@ -157,9 +158,9 @@ def _clean_gesture_interval(value) -> int:
     try:
         interval = int(value)
     except (TypeError, ValueError):
-        raise ValueError("Gesture interval must be a whole number of milliseconds.") from None
+        raise Invalid("Gesture interval must be a whole number of milliseconds.") from None
     if not MIN_GESTURE_INTERVAL_MS <= interval <= MAX_GESTURE_INTERVAL_MS:
-        raise ValueError(
+        raise Invalid(
             f"Gesture interval must be between {MIN_GESTURE_INTERVAL_MS} and "
             f"{MAX_GESTURE_INTERVAL_MS} ms."
         )
@@ -176,9 +177,9 @@ def update_language(user_id, language_id, *, name=None, description=None,
     if name is not None:
         name = name.strip()
         if not name:
-            raise ValueError("A language needs a name.")
+            raise Invalid("A language needs a name.")
         if len(name) > 80:
-            raise ValueError("That name is too long (80 characters max).")
+            raise Invalid("That name is too long (80 characters max).")
         clash = db.fetch_one(
             """
             SELECT id FROM languages
@@ -257,7 +258,7 @@ def create_sign(user_id, language_id, name: str, has_phrases: bool,
     get_language(user_id, language_id)
     name = (name or "").strip()
     if not name:
-        raise ValueError("A sign needs a name.")
+        raise Invalid("A sign needs a name.")
 
     phrases = [p.strip() for p in (phrases or []) if p and p.strip()]
     # schema.sql enforces this too; catching it here gives a better message.
@@ -355,7 +356,7 @@ def create_symbol(user_id, sign_id, name: str) -> dict:
     get_sign(user_id, sign_id)
     name = (name or "").strip()
     if not name:
-        raise ValueError("A symbol needs a name.")
+        raise Invalid("A symbol needs a name.")
 
     existing = db.fetch_one(
         "SELECT * FROM symbols WHERE sign_id = %s AND lower(name) = lower(%s)",
@@ -378,7 +379,7 @@ def update_symbol(user_id, symbol_id, *, name=None, output_kind=None,
     if name is not None:
         name = name.strip()
         if not name:
-            raise ValueError("A symbol needs a name.")
+            raise Invalid("A symbol needs a name.")
         clash = db.fetch_one(
             """
             SELECT id FROM symbols
@@ -393,7 +394,7 @@ def update_symbol(user_id, symbol_id, *, name=None, output_kind=None,
 
     kind = (output_kind if output_kind is not None else current["output_kind"]).strip().lower()
     if kind not in OUTPUT_KINDS:
-        raise ValueError(f"Output kind must be one of: {', '.join(OUTPUT_KINDS)}.")
+        raise Invalid(f"Output kind must be one of: {', '.join(OUTPUT_KINDS)}.")
 
     value = (output_value if output_value is not None else current["output_value"]) or ""
     value = value.strip() if kind != "text" else value
@@ -401,7 +402,7 @@ def update_symbol(user_id, symbol_id, *, name=None, output_kind=None,
     if kind == "space":
         value = ""
     if kind in ("key", "combo") and not value:
-        raise ValueError(f"A '{kind}' output needs to say which key it sends.")
+        raise Invalid(f"A '{kind}' output needs to say which key it sends.")
 
     return db.fetch_one(
         """
@@ -435,7 +436,7 @@ def publish_language(user_id, language_id, public: bool = True) -> dict:
     if public:
         review = review_language(user_id, language_id)
         if not review["ok"]:
-            raise ValueError(
+            raise Invalid(
                 "This language cannot be published yet: "
                 + " ".join(issue["message"] for issue in review["issues"]
                            if issue["level"] == "block")
@@ -808,14 +809,14 @@ def set_symbol_image(user_id, symbol_id, data: bytes, mime: str | None = None,
     symbol = get_symbol(user_id, symbol_id)
     language = get_language(user_id, symbol["language_id"])
     if not language["gesture_translation"]:
-        raise ValueError("Enable gesture translation on this language before storing pictures.")
+        raise Invalid("Enable gesture translation on this language before storing pictures.")
     if not data:
-        raise ValueError("The picture is empty.")
+        raise Invalid("The picture is empty.")
     if len(data) > MAX_IMAGE_BYTES:
-        raise ValueError(f"The picture is too large ({len(data)} bytes; max {MAX_IMAGE_BYTES}).")
+        raise Invalid(f"The picture is too large ({len(data)} bytes; max {MAX_IMAGE_BYTES}).")
     detected = sniff_image(data)
     if detected is None or (mime and mime != detected):
-        raise ValueError("That is not a JPEG, PNG or WebP image.")
+        raise Invalid("That is not a JPEG, PNG or WebP image.")
     row = db.fetch_one(
         """
         INSERT INTO symbol_images (symbol_id, mime, image, width, height)

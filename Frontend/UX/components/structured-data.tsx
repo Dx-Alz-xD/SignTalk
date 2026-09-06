@@ -4,10 +4,14 @@ import { SITE_NAME, SITE_URL, absoluteUrl } from '@/lib/site'
  * Emits a JSON-LD block. Server-rendered, so it is present in the page source
  * for crawlers that never execute JavaScript.
  */
-export function JsonLd({ data }: { data: object | object[] }) {
+export function JsonLd({ data, nonce }: { data: object | object[]; nonce?: string }) {
   return (
     <script
       type="application/ld+json"
+      // A data block, not code, so browsers do not run it - but it is still a
+      // <script> and a strict CSP is entitled to refuse it. The nonce costs
+      // nothing and takes that question off the table.
+      nonce={nonce}
       // The input is our own literals, never user content.
       dangerouslySetInnerHTML={{ __html: JSON.stringify(data) }}
     />

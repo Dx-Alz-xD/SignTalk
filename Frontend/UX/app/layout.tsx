@@ -152,11 +152,25 @@ const siteGraph = [
   },
 ]
 
-export default function RootLayout({
+/**
+ * The CSP nonce minted for this request in proxy.ts, or undefined when there
+ * is no request to read - the desktop build is a static export, where proxy.ts
+ * never runs and headers() is not available. Reading it is what makes every
+ * page dynamic, which nonce-based CSP requires anyway.
+ */
+async function cspNonce(): Promise<string | undefined> {
+  if (process.env.DESKTOP_BUILD === '1') return undefined
+  const { headers } = await import('next/headers')
+  return (await headers()).get('x-nonce') ?? undefined
+}
+
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode
 }>) {
+  const nonce = await cspNonce()
+
   return (
     <html
       lang="en"
@@ -164,8 +178,8 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <head>
-        <script dangerouslySetInnerHTML={{ __html: themeBootstrap }} />
-        <JsonLd data={siteGraph} />
+        <script nonce={nonce} dangerouslySetInnerHTML={{ __html: themeBootstrap }} />
+        <JsonLd data={siteGraph} nonce={nonce} />
       </head>
       <body className="antialiased font-sans">
         {children}

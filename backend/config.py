@@ -15,6 +15,17 @@ def project_root() -> pathlib.Path:
     return pathlib.Path(__file__).resolve().parent.parent
 
 
+def is_production() -> bool:
+    """True when this process is serving real traffic.
+
+    One switch behind every hardening decision - the Secure cookie flag, the
+    security headers, whether /docs is published and whether an unset
+    SIGNTALK_ORIGINS is fatal - so a deployment cannot end up half-hardened by
+    setting one variable and forgetting another.
+    """
+    return os.environ.get("SIGNTALK_ENV", "dev").strip().lower() in ("prod", "production")
+
+
 def load_env_file(path: str | os.PathLike | None = None) -> list[str]:
     """Load KEY=value lines into os.environ. Returns the keys it set.
 

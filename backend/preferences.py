@@ -12,6 +12,7 @@ stay snake_case, and this module is the only place the two meet.
 from __future__ import annotations
 
 from . import db
+from .errors import Invalid
 
 THEMES = ("light", "dark", "system")
 PACES = ("careful", "speed")
@@ -44,19 +45,19 @@ def _clean(column: str, value):
     if column == "theme":
         theme = str(value or "system").strip().lower()
         if theme not in THEMES:
-            raise ValueError(f"Theme must be one of: {', '.join(THEMES)}.")
+            raise Invalid(f"Theme must be one of: {', '.join(THEMES)}.")
         return theme
 
     if column == "pace":
         pace = str(value or "careful").strip().lower()
         if pace not in PACES:
-            raise ValueError(f"Recognition pace must be one of: {', '.join(PACES)}.")
+            raise Invalid(f"Recognition pace must be one of: {', '.join(PACES)}.")
         return pace
 
     if column == "camera_device_id":
         device = str(value or "").strip()
         if len(device) > 200:
-            raise ValueError("That camera id is too long.")
+            raise Invalid("That camera id is too long.")
         return device
 
     if column in ("mirror_preview", "show_skeleton", "reduce_motion", "overlay_caption"):
@@ -66,17 +67,17 @@ def _clean(column: str, value):
         confidence = _number(value, "Minimum confidence")
         low, high = MIN_CONFIDENCE_RANGE
         if not low <= confidence <= high:
-            raise ValueError(f"Minimum confidence must be between {low} and {high}.")
+            raise Invalid(f"Minimum confidence must be between {low} and {high}.")
         return round(confidence, 3)
 
     if column == "capture_countdown":
         try:
             seconds = int(value)
         except (TypeError, ValueError):
-            raise ValueError("The countdown must be a whole number of seconds.") from None
+            raise Invalid("The countdown must be a whole number of seconds.") from None
         low, high = COUNTDOWN_RANGE
         if not low <= seconds <= high:
-            raise ValueError(f"The countdown must be between {low} and {high} seconds.")
+            raise Invalid(f"The countdown must be between {low} and {high} seconds.")
         return seconds
 
     if column.startswith("overlay_"):
@@ -89,14 +90,14 @@ def _clean(column: str, value):
             return round(min(0.6, max(0.1, value)), 4)
         return round(min(1.0, max(0.0, value)), 4)
 
-    raise ValueError(f"Unknown setting: {column}")
+    raise Invalid(f"Unknown setting: {column}")
 
 
 def _number(value, what: str) -> float:
     try:
         return float(value)
     except (TypeError, ValueError):
-        raise ValueError(f"{what} must be a number.") from None
+        raise Invalid(f"{what} must be a number.") from None
 
 
 def _row_to_payload(row) -> dict:

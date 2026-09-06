@@ -7,6 +7,7 @@ Run it from the repo root - the detector package is imported from there.
 
 from __future__ import annotations
 
+import logging
 import os
 
 from contextlib import asynccontextmanager
@@ -26,11 +27,16 @@ from ..auth import (
     SessionError,
     ValidationError,
 )
-from ..config import load_env_file
+from ..config import is_production, load_env_file
+from ..errors import Invalid
 from . import (routes_auth, routes_library, routes_preferences, routes_training,
                routes_users, routes_video)
 
 load_env_file()
+
+log = logging.getLogger("signtalk.api")
+
+PRODUCTION = is_production()
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
@@ -47,11 +53,16 @@ async def lifespan(_app: FastAPI):
     db.close_pool()
 
 
+# Interactive docs are a complete map of the API. Useful on a laptop, an
+# invitation on a public host - so they are published only outside production.
 app = FastAPI(
     title="SignTalk API",
     version="1.0.0",
     description="Accounts, sign library and gesture training for SignTalk.",
     lifespan=lifespan,
+    docs_url=None if PRODUCTION else "/docs",
+    redoc_url=None if PRODUCTION else "/redoc",
+    openapi_url=None if PRODUCTION else "/openapi.json",
 )
 
 # The two Next apps run on their own ports in development. Credentials are on
@@ -63,6 +74,16 @@ DEFAULT_ORIGINS = [
 ]
 origins = [o.strip() for o in os.environ.get("SIGNTALK_ORIGINS", "").split(",") if o.strip()]
 
+# Falling back to the localhost list in production would be silent and wrong:
+# the real frontend would be refused, and the failure would look like a bug in
+# the browser rather than a missing variable. Say so at startup instead.
+if PRODUCTION and not origins:
+    raise RuntimeError(
+        "SIGNTALK_ENV is production but SIGNTALK_ORIGINS is not set. List the "
+        "origins your frontend is served from, e.g. "
+        "SIGNTALK_ORIGINS=https://signtalk.example.com"
+    )
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins or DEFAULT_ORIGINS,
@@ -70,6 +91,48 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ------------------------------------------------------------------ headers --
+
+# This app answers with JSON, images and one binary model file - never HTML
+# that a browser should run script from. So the policy can be the strictest
+# one there is, and it stays correct however the routes grow.
+_API_CSP = "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
+
+_SECURITY_HEADERS = {
+    # Stops a browser second-guessing Content-Type - the reason an uploaded
+    # "image" can otherwise come back and be run as script.
+    "X-Content-Type-Options": "nosniff",
+    # Legacy sibling of frame-ancestors, still honoured by older browsers.
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "no-referrer",
+    # Nothing here needs the camera or microphone: the browser does the camera
+    # work on the frontend origin, and only landmarks are ever sent here.
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+    # The frontend is a different origin by design, so resources have to stay
+    # loadable across it; the CORS rules above are what actually gate access.
+    "Cross-Origin-Resource-Policy": "cross-origin",
+}
+
+# Swagger UI is HTML with its own scripts and styles, so default-src 'none'
+# would leave a blank page. Docs only exist outside production anyway.
+_DOC_PATHS = ("/docs", "/redoc", "/openapi.json")
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    response = await call_next(request)
+    for header, value in _SECURITY_HEADERS.items():
+        response.headers.setdefault(header, value)
+    if not request.url.path.startswith(_DOC_PATHS):
+        response.headers.setdefault("Content-Security-Policy", _API_CSP)
+    if PRODUCTION:
+        # Two years, and only in production: sent over plain HTTP on a laptop
+        # it would pin localhost to HTTPS in the developer's browser.
+        response.headers.setdefault(
+            "Strict-Transport-Security", "max-age=63072000; includeSubDomains")
+    return response
 
 
 # --------------------------------------------------------- error translation --
@@ -96,11 +159,15 @@ def handle_auth_error(_request: Request, exc: AuthError):
 
 @app.exception_handler(DeliveryError)
 def handle_delivery_error(_request: Request, exc: DeliveryError):
-    return JSONResponse(
-        status_code=status.HTTP_502_BAD_GATEWAY,
-        content={"error": "Could not send the code right now. Try again.",
-                 "code": "DeliveryError", "detail": str(exc)},
-    )
+    # The detail is an SMTP or Twilio failure: hostnames, account ids and
+    # sometimes a rejected credential. Useful on a laptop, reconnaissance on a
+    # public host, so it goes to the log there and only to the client here.
+    log.warning("Delivery failed: %s", exc)
+    content = {"error": "Could not send the code right now. Try again.",
+               "code": "DeliveryError"}
+    if not PRODUCTION:
+        content["detail"] = str(exc)
+    return JSONResponse(status_code=status.HTTP_502_BAD_GATEWAY, content=content)
 
 
 @app.exception_handler(library.NotFound)
@@ -115,8 +182,27 @@ def handle_conflict(_request: Request, exc: library.Conflict):
                         content={"error": str(exc), "code": "Conflict"})
 
 
+@app.exception_handler(Invalid)
+def handle_invalid(_request: Request, exc: Invalid):
+    """Input the user can fix, in wording chosen for them. Safe to pass on."""
+    return JSONResponse(status_code=status.HTTP_400_BAD_REQUEST,
+                        content={"error": str(exc), "code": "Invalid"})
+
+
 @app.exception_handler(ValueError)
-def handle_value_error(_request: Request, exc: ValueError):
+def handle_value_error(request: Request, exc: ValueError):
+    """A ValueError nobody wrote a message for - so it describes our internals.
+
+    It still means the request was unusable, so the status is unchanged; what
+    changes is that the text goes to the log rather than to the browser. If
+    one of these turns out to be worth showing, raise errors.Invalid instead.
+    """
+    log.exception("Unhandled ValueError on %s %s", request.method, request.url.path)
+    if PRODUCTION:
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={"error": "That request could not be processed.",
+                     "code": "ValueError"})
     return JSONResponse(status_code=status.HTTP_400_BAD_REQUEST,
                         content={"error": str(exc), "code": "ValueError"})
 
